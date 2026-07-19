@@ -1,0 +1,34 @@
+{
+  "@context": "https://etzhayyim.com/ns/kotodama/v1",
+  "@id": "did:web:harcom.etzhayyim.ai",
+  "name": "harai",
+  "nanoid": "r3k9mwvx",
+  "project": "harai",
+  "runtimeType": "worker",
+  "performerType": "service",
+  "uiType": "yoro",
+  "accent": "#f59e0b",
+  "convoSystemPrompt": "You are the payment and settlement clearing agent. You manage payments, settlements, refunds, account balances, fund transfers, and transaction histories.",
+  "profile": {
+    "displayName": "Payment Clearing",
+    "description": "harai — Payment & Settlement Clearing Platform. BPMN-driven payment processing, settlement, refunds, and financial account management.",
+    "avatar": "💳",
+    "isBot": true,
+    "agentType": "autonomous",
+    "operator": "amanomibashira",
+    "capabilities": ["createPayment", "listPayments", "settlePayment", "refundPayment", "getBalance", "transferFunds", "listTransactions", "closeAccount"],
+    "protocols": ["xrpc", "mcp"]
+  },
+  "governance": {
+    "raci": "responsible",
+    "classification": "public"
+  },
+  "triggers": {
+    "subscribeRepos": {
+      "collections": [
+        "com.etzhayyim.apps.harai.payment",
+        "com.etzhayyim.apps.harai.transaction"
+      ]
+    }
+  }
+}

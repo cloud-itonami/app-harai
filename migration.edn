@@ -1,0 +1,1 @@
+{:schema "etzhayyim.migration/v1" :source {:repository "etzhayyim/root" :revision "f9432ab5dd6554faa47e49b695e8ff508f824be6" :path "60-apps/etzhayyim-project-harai" :tree "d3901af77451b7eb3d395c266c3052a507cb2bdc" :tracked-files 21 :bytes 52105} :destination {:repository "etzhayyim/com-etzhayyim-app-harai"} :identity {:allowed-additions ["README.edn" "migration.edn"]}}

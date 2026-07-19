@@ -1,0 +1,111 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bpmn:definitions xmlns:bpmn="http://www.omg.org/spec/BPMN/20100524/MODEL"
+                  xmlns:zeebe="http://camunda.org/schema/zeebe/1.0"
+                  xmlns:bpmndi="http://www.omg.org/spec/BPMN/20100524/DI"
+                  targetNamespace="http://bpmn.io/schema/bpmn">
+
+  <!-- createPayment -->
+  <bpmn:process id="harai-create-payment" name="Harai Create Payment" isExecutable="true">
+    <bpmn:startEvent id="start-create-payment"/>
+    <bpmn:sequenceFlow id="sf-cpay-1" sourceRef="start-create-payment" targetRef="task-create-payment"/>
+    <bpmn:serviceTask id="task-create-payment" name="Create Payment">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="com.etzhayyim.apps.harai.createPayment"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="sf-cpay-2" sourceRef="task-create-payment" targetRef="end-create-payment"/>
+    <bpmn:endEvent id="end-create-payment"/>
+  </bpmn:process>
+
+  <!-- listPayments -->
+  <bpmn:process id="harai-list-payments" name="Harai List Payments" isExecutable="true">
+    <bpmn:startEvent id="start-list-payments"/>
+    <bpmn:sequenceFlow id="sf-lpay-1" sourceRef="start-list-payments" targetRef="task-list-payments"/>
+    <bpmn:serviceTask id="task-list-payments" name="List Payments">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="com.etzhayyim.apps.harai.listPayments"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="sf-lpay-2" sourceRef="task-list-payments" targetRef="end-list-payments"/>
+    <bpmn:endEvent id="end-list-payments"/>
+  </bpmn:process>
+
+  <!-- settlePayment -->
+  <bpmn:process id="harai-settle-payment" name="Harai Settle Payment" isExecutable="true">
+    <bpmn:startEvent id="start-settle-payment"/>
+    <bpmn:sequenceFlow id="sf-spay-1" sourceRef="start-settle-payment" targetRef="task-settle-payment"/>
+    <bpmn:serviceTask id="task-settle-payment" name="Settle Payment">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="com.etzhayyim.apps.harai.settlePayment"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="sf-spay-2" sourceRef="task-settle-payment" targetRef="end-settle-payment"/>
+    <bpmn:endEvent id="end-settle-payment"/>
+  </bpmn:process>
+
+  <!-- refundPayment -->
+  <bpmn:process id="harai-refund-payment" name="Harai Refund Payment" isExecutable="true">
+    <bpmn:startEvent id="start-refund-payment"/>
+    <bpmn:sequenceFlow id="sf-rpay-1" sourceRef="start-refund-payment" targetRef="task-refund-payment"/>
+    <bpmn:serviceTask id="task-refund-payment" name="Refund Payment">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="com.etzhayyim.apps.harai.refundPayment"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="sf-rpay-2" sourceRef="task-refund-payment" targetRef="end-refund-payment"/>
+    <bpmn:endEvent id="end-refund-payment"/>
+  </bpmn:process>
+
+  <!-- getBalance -->
+  <bpmn:process id="harai-get-balance" name="Harai Get Balance" isExecutable="true">
+    <bpmn:startEvent id="start-get-balance"/>
+    <bpmn:sequenceFlow id="sf-gb-1" sourceRef="start-get-balance" targetRef="task-get-balance"/>
+    <bpmn:serviceTask id="task-get-balance" name="Get Balance">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="com.etzhayyim.apps.harai.getBalance"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="sf-gb-2" sourceRef="task-get-balance" targetRef="end-get-balance"/>
+    <bpmn:endEvent id="end-get-balance"/>
+  </bpmn:process>
+
+  <!-- transferFunds -->
+  <bpmn:process id="harai-transfer-funds" name="Harai Transfer Funds" isExecutable="true">
+    <bpmn:startEvent id="start-transfer-funds"/>
+    <bpmn:sequenceFlow id="sf-tf-1" sourceRef="start-transfer-funds" targetRef="task-transfer-funds"/>
+    <bpmn:serviceTask id="task-transfer-funds" name="Transfer Funds">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="com.etzhayyim.apps.harai.transferFunds"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="sf-tf-2" sourceRef="task-transfer-funds" targetRef="end-transfer-funds"/>
+    <bpmn:endEvent id="end-transfer-funds"/>
+  </bpmn:process>
+
+  <!-- listTransactions -->
+  <bpmn:process id="harai-list-transactions" name="Harai List Transactions" isExecutable="true">
+    <bpmn:startEvent id="start-list-transactions"/>
+    <bpmn:sequenceFlow id="sf-lt-1" sourceRef="start-list-transactions" targetRef="task-list-transactions"/>
+    <bpmn:serviceTask id="task-list-transactions" name="List Transactions">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="com.etzhayyim.apps.harai.listTransactions"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="sf-lt-2" sourceRef="task-list-transactions" targetRef="end-list-transactions"/>
+    <bpmn:endEvent id="end-list-transactions"/>
+  </bpmn:process>
+
+  <!-- closeAccount -->
+  <bpmn:process id="harai-close-account" name="Harai Close Account" isExecutable="true">
+    <bpmn:startEvent id="start-close-account"/>
+    <bpmn:sequenceFlow id="sf-ca-1" sourceRef="start-close-account" targetRef="task-close-account"/>
+    <bpmn:serviceTask id="task-close-account" name="Close Account">
+      <bpmn:extensionElements>
+        <zeebe:taskDefinition type="com.etzhayyim.apps.harai.closeAccount"/>
+      </bpmn:extensionElements>
+    </bpmn:serviceTask>
+    <bpmn:sequenceFlow id="sf-ca-2" sourceRef="task-close-account" targetRef="end-close-account"/>
+    <bpmn:endEvent id="end-close-account"/>
+  </bpmn:process>
+
+</bpmn:definitions>

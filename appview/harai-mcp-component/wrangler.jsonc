@@ -1,0 +1,43 @@
+{
+  "name": "kotodama-r3k9mwvx",
+  "main": "svelte/.svelte-kit/cloudflare/_worker.js",
+  "compatibility_date": "2025-03-17",
+  "compatibility_flags": [
+    "nodejs_compat",
+    "nodejs_als"
+  ],
+  "vars": {
+    "APP_CAPABILITIES": "[\"createPayment\",\"listPayments\",\"settlePayment\",\"refundPayment\",\"getBalance\",\"transferFunds\",\"listTransactions\",\"closeAccount\"]",
+    "APP_DESCRIPTION": "harai — Payment & Settlement Clearing Platform. BPMN-driven payment processing, settlement, refunds, and financial account management.",
+    "APP_DISPLAY_NAME": "Payment Clearing",
+    "APP_FRAMEWORK": "sveltekit-edge-bff",
+    "APP_NANOID": "r3k9mwvx",
+    "APP_PERFORMER_TYPE": "service",
+    "APP_UI_TYPE": "yoro",
+    "AGENTGATEWAY_MCP_ROUTER_URL": "https://mcp.etzhayyim.com/xrpc/com.etzhayyim.mcp.message"
+  },
+  "rules": [
+    {
+      "type": "CompiledWasm",
+      "globs": [
+        "**/*.wasm"
+      ]
+    }
+  ],
+  "routes": [
+    {
+      "pattern": "r3k9mwvx.etzhayyim.com/*",
+      "zone_name": "etzhayyim.com"
+    },
+    {
+      "pattern": "harcom.etzhayyim.ai/*",
+      "zone_name": "etzhayyim.com"
+    }
+  ],
+  "assets": {
+    "directory": "./svelte/.svelte-kit/cloudflare/client",
+    "binding": "ASSETS",
+    "html_handling": "auto-trailing-slash",
+    "not_found_handling": "none"
+  }
+}
