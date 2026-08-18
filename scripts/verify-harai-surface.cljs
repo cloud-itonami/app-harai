@@ -1,32 +1,39 @@
 #!/usr/bin/env nbb
-;; verify-harai-surface — pin what this repository currently says about its own
-;; HTTP surface and its own method vocabulary.
+;; verify-harai-surface — pin what this repository says about its own HTTP
+;; surface, its own method vocabulary, and the migration that gave it one entry.
 ;;
-;; WHY THIS EXISTS. app-harai describes its service in six places that do not
-;; agree with each other: kotodama.jsonld, wrangler.jsonc, bpmn/harai-control.bpmn,
-;; appview/*/src/app.ts, the SvelteKit route under appview/*/svelte/src/routes/, and
-;; kotoba/src/. Reading any one of them gives a confident and wrong answer about
-;; what is deployed. This checker writes the disagreements down as assertions so
-;; they cannot drift further without someone noticing.
+;; WHY THIS EXISTS. app-harai used to describe its service in six places that did
+;; not agree: kotodama.jsonld, wrangler.jsonc, bpmn/harai-control.bpmn,
+;; appview/*/src/app.ts, the SvelteKit route under appview/*/svelte/, and kotoba/src.
+;; Reading any one of them gave a confident and wrong answer about what was deployed.
 ;;
-;; IT DOES NOT PICK A WINNER. Which surface is canonical is an owner decision
-;; (see docs/operator-quickstart.md §6). Every assertion below states the state as
-;; it is on the commit this file landed with. **Fixing any of them turns this
-;; checker red — that is the intent, not a bug.** When you fix one, update the
-;; assertion in the same commit and say what you chose.
+;; **2026-08-18 — one of those disagreements is now decided, not pinned.** The
+;; appview moved from TypeScript/Svelte to ClojureScript (docs/adr/0001). The
+;; deployed path — the SvelteKit pass-through — is what was ported; the facade
+;; (src/app.ts), which no request ever reached and whose DISPATCHER_* bindings
+;; were never declared in wrangler.jsonc, was removed rather than revived. So the
+;; assertions that used to read "…only by the undeployed facade" are gone with it,
+;; and their place is taken by assertions that the second path has not come back.
+;;
+;; The disagreements the migration did NOT touch (method vocabulary, the route
+;; outside its zone, the inert firehose subscription, the DID that cannot resolve)
+;; are still pinned here, unchanged. **Fixing any of them turns this checker red —
+;; that is the intent.** Update the assertion in the same commit and say what you chose.
 ;;
 ;;   nbb scripts/verify-harai-surface.cljs            # from the repo root
 ;;   nbb scripts/verify-harai-surface.cljs --no-net   # skip the DNS check
 ;;
-;; Exit codes are three-valued on purpose (ADR-2608136000): a check that could
-;; not run must not be indistinguishable from a check that ran and was happy.
+;; Exit codes are three-valued on purpose (ADR-2608136000): a check that could not
+;; run must not be indistinguishable from a check that ran and was happy.
 ;;   0 = every assertion held
 ;;   1 = an assertion changed  (the report names which id, and what it now sees)
 ;;   2 = could not answer      (an input was missing, or nothing was scanned)
 
 (ns verify-harai-surface
   (:require [clojure.string :as str]
+            [cljs.reader :as edn]
             ["node:fs" :as fs]
+            ["node:crypto" :as crypto]
             ["node:child_process" :as cp]))
 
 (def argv (vec (drop 2 (js->clj js/process.argv))))
@@ -41,20 +48,53 @@
 (def required-inputs
   [(str APPVIEW "/kotodama.jsonld")
    (str APPVIEW "/wrangler.jsonc")
-   (str APPVIEW "/src/app.ts")
-   (str APPVIEW "/svelte/src/routes/xrpc/[...path]/+server.ts")
    "bpmn/harai-control.bpmn"
    "kotoba/src/index.ts"
    "kotoba/src/types.ts"
-   "kotoba/src/registry.ts"])
+   "kotoba/src/registry.ts"
+   "src/harai/route.cljc"
+   "src/harai/view.cljc"
+   "src/harai/worker.cljs"
+   "shadow-cljs.edn"
+   "deps.edn"])
+
+;; What the migration REMOVED, by name. A byte total cannot say "the TypeScript
+;; appview is gone"; this can, and it fails if any of it comes back.
+(def removed-by-migration
+  [(str APPVIEW "/src/app.ts")
+   (str APPVIEW "/package.json")
+   (str APPVIEW "/svelte/package.json")
+   (str APPVIEW "/svelte/src/app.html")
+   (str APPVIEW "/svelte/src/routes/+page.svelte")
+   (str APPVIEW "/svelte/src/routes/xrpc/[...path]/+server.ts")
+   (str APPVIEW "/svelte/svelte.config.js")
+   (str APPVIEW "/svelte/tsconfig.json")
+   (str APPVIEW "/svelte/vite.config.ts")])
+
+;; Inherited files this repository still carries BYTE-IDENTICAL, including the
+;; whole kotoba/ slice. wrangler.jsonc and MIGRATION-TODO.md were changed on
+;; purpose by the migration and are checked by content further down instead.
+(def preserved
+  {"NOTICE" "9c15d4314e8b4f3466e7cc085b57c49ae3d6233b70fed4dc7987803ebf79f856"
+   "README.edn" "3a810efea8dd5e66c4e2d2b384bab5bd3acd782f34b5da734a6286bb4dd117b9"
+   "migration.edn" "cc4da5d728a16c85145ba51736be36fe79802ce882963341845748e688c14846"
+   "appview/harai-mcp-component/kotodama.jsonld" "25f0e9d7ca6f582bc1996be59f9160397d63ad5a70b4cda08080fddf943205e6"
+   "bpmn/harai-control.bpmn" "e485202eb40333a1b450eb0b973aeff1161f6ce0197ca599d7157367c93e78bc"})
 
 (defn slurp* [p]
   (when (fs/existsSync p) (str (fs/readFileSync p "utf8"))))
 
+(defn sha256 [p]
+  (when (fs/existsSync p)
+    (-> (.createHash crypto "sha256") (.update (fs/readFileSync p)) (.digest "hex"))))
+
+(defn tracked []
+  (->> (str (cp/execSync "git ls-files" #js {:encoding "utf8"}))
+       str/split-lines (remove str/blank?) vec))
+
 (defn strip-jsonc
   "wrangler.jsonc carries // comments. Drop them before JSON.parse, but never
-   inside a string literal — the APP_DESCRIPTION value contains a URL-ish em dash
-   today and could contain // tomorrow."
+   inside a string literal — the APP_DESCRIPTION value could contain // tomorrow."
   [s]
   (str/join "\n"
             (for [line (str/split-lines s)]
@@ -69,9 +109,8 @@
                   :else (recur (inc i) in-str? false))))))
 
 ;; ── assertions ───────────────────────────────────────────────────────────────
-;; Each returns {:id :status :saw :want :note}. :status is one of
-;; :held / :changed / :skipped. :skipped is reported separately from :held and
-;; never counts toward the pass total.
+;; Each returns {:id :status :saw :want :note}. :status is :held / :changed /
+;; :skipped. :skipped is reported separately and never counts toward the pass total.
 
 (defn held [id want saw note] {:id id :status :held :want want :saw saw :note note})
 (defn changed [id want saw note] {:id id :status :changed :want want :saw saw :note note})
@@ -88,23 +127,17 @@
 (defn bpmn-methods [src]
   (set (map second (re-seq #"taskDefinition type=\"com\.etzhayyim\.apps\.harai\.([A-Za-z]+)\"" src))))
 
-(defn facade-methods [src]
-  ;; the /health response lists the methods the facade claims to speak
-  (when-let [block (second (re-find #"methods:\s*\[([\s\S]*?)\]" src))]
-    (set (map second (re-seq #"\"([a-zA-Z]+)\"" block)))))
-
 (defn implemented-methods [src]
   (when-let [block (second (re-find #"export \{([\s\S]*?)\} from" src))]
     (into #{} (remove str/blank?) (map str/trim (str/split block #",")))))
 
 (defn dns-resolves?
-  "Return true/false, or :unknown when the lookup itself could not be performed.
-   An unreachable resolver must not be reported as a resolving host, and must not
-   be reported as a missing one either."
+  "true / false, or :unknown when the lookup itself could not be performed. An
+   unreachable resolver must not be reported as a resolving host, and must not be
+   reported as a missing one either."
   [host]
   (try
-    (let [out (str (cp/execSync (str "host -W 5 " host " 2>&1 || true")
-                                #js {:encoding "utf8"}))]
+    (let [out (str (cp/execSync (str "host -W 5 " host " 2>&1 || true") #js {:encoding "utf8"}))]
       (cond
         (re-find #"NXDOMAIN" out) false
         (re-find #"has address|has IPv6|is an alias" out) true
@@ -114,34 +147,26 @@
 (defn run-checks []
   (let [kotodama (slurp* (str APPVIEW "/kotodama.jsonld"))
         wrangler (slurp* (str APPVIEW "/wrangler.jsonc"))
-        appts    (slurp* (str APPVIEW "/src/app.ts"))
-        route    (slurp* (str APPVIEW "/svelte/src/routes/xrpc/[...path]/+server.ts"))
         bpmn     (slurp* "bpmn/harai-control.bpmn")
         index    (slurp* "kotoba/src/index.ts")
         types    (slurp* "kotoba/src/types.ts")
-        registry (slurp* "kotoba/src/registry.ts")
+        todo     (slurp* "MIGRATION-TODO.md")
+        viewsrc  (slurp* "src/harai/view.cljc")
+        workersrc (slurp* "src/harai/worker.cljs")
+        shadow   (edn/read-string (slurp* "shadow-cljs.edn"))
         wj       (js->clj (js/JSON.parse (strip-jsonc wrangler)) :keywordize-keys true)
         kj       (js->clj (js/JSON.parse kotodama) :keywordize-keys true)
+        files    (tracked)
 
         declared (declared-methods kotodama)
         wcaps    (wrangler-methods wrangler)
         bmeth    (bpmn-methods bpmn)
-        fmeth    (facade-methods appts)
         impl     (implemented-methods index)
         overlap  (into (sorted-set) (filter impl declared))
 
-        ;; the svelte routes that actually get built into the deployed worker
-        route-dir (str APPVIEW "/svelte/src/routes")
-        svelte-routes (when (fs/existsSync route-dir)
-                        (str (cp/execSync (str "find '" route-dir "' -name '+server.ts' -o -name '+page.svelte'")
-                                          #js {:encoding "utf8"})))
-
-        ;; "@id" is not a readable keyword, so read it off the raw text rather
-        ;; than through the keywordized map.
         actor-did (second (re-find #"\"@id\"\s*:\s*\"([^\"]+)\"" kotodama))
         did-host  (some-> actor-did (str/replace #"^did:web:" "") (str/split #":") first)
-        wr-routes (:routes wj)
-        bad-routes (vec (for [r wr-routes
+        bad-routes (vec (for [r (:routes wj)
                               :let [pat (:pattern r) zone (:zone_name r)
                                     hostname (first (str/split pat #"/"))]
                               :when (not (or (= hostname zone) (str/ends-with? hostname (str "." zone))))]
@@ -151,46 +176,120 @@
         inner-types (into #{} (map second)
                           (re-seq #"export const \w+_INNER_TYPE = \"([^\"]+)\"" types))
         outer-colls (into #{} (map second)
-                          (re-seq #"export const RAIL_COLLECTION = \"([^\"]+)\"" types))]
+                          (re-seq #"export const RAIL_COLLECTION = \"([^\"]+)\"" types))
+
+        kotoba-files (filterv #(str/starts-with? % "kotoba/") files)
+        appview-ts (filterv #(and (str/starts-with? % APPVIEW) (str/ends-with? % ".ts")) files)
+        canonical (filterv #(re-find #"^src/.*\.(cljs|cljc)$" %) files)]
     (cond-> []
 
-      true (conj (check :deployed-entry-is-sveltekit-not-app-ts
-                        "svelte/.svelte-kit/cloudflare/_worker.js"
-                        (:main wj)
-                        (str "wrangler main decides what runs. " APPVIEW "/src/app.ts is "
-                             (count (str/split-lines appts)) " lines that no request reaches.")))
+      ;; ── the migration: one entry, and it is built from this tree ────────────
+      true (conj (check :deployed-entry-is-the-cljs-bundle
+                        {:main "../../dist/worker.js" :output-dir "dist"
+                         :export 'harai.worker/handler}
+                        {:main (:main wj)
+                         :output-dir (get-in shadow [:builds :worker :output-dir])
+                         :export (get-in shadow [:builds :worker :modules :worker :exports 'default])}
+                        "wrangler main decides what runs; it now names the shadow-cljs output built from src/"))
 
-      true (conj (check :health-served-only-by-undeployed-facade
-                        {:facade true :deployed false}
-                        {:facade (boolean (re-find #"/health" appts))
-                         :deployed (boolean (and svelte-routes (re-find #"health" svelte-routes)))}
-                        "a health check against the deployed worker hits SvelteKit's 404 (not_found_handling: none)"))
+      true (conj (check :warnings-as-errors-in-compiler-options
+                        {:compiler-options true :build-options nil}
+                        {:compiler-options (get-in shadow [:builds :worker :compiler-options :warnings-as-errors])
+                         :build-options (get-in shadow [:builds :worker :build-options])}
+                        (str "read by parsing the EDN, not by grepping — shadow reads "
+                             "[:compiler-options :warnings-as-errors] and silently ignores the same key "
+                             "under :build-options, which would be a fix that cannot fail")))
 
-      true (conj (check :malformed-body-rejected-only-by-undeployed-facade
-                        {:facade-400 true :deployed-swallows true}
-                        {:facade-400 (boolean (re-find #"InvalidJson" appts))
-                         :deployed-swallows (boolean (re-find #"\.catch\(\(\)\s*=>\s*\(\{\}\)\)" route))}
-                        "deployed route turns a corrupt body into a tool call with empty arguments"))
+      true (conj (check :second-request-path-is-gone
+                        []
+                        (vec (filter fs/existsSync removed-by-migration))
+                        (str "the facade (src/app.ts) and the SvelteKit tree were removed by the migration; "
+                             "these " (count removed-by-migration) " paths must stay absent")))
 
-      true (conj (check :nsid-prefix-enforced-only-by-undeployed-facade
-                        {:facade-prefixed true :deployed-any-nsid true}
-                        {:facade-prefixed (boolean (re-find #"NSID_PREFIX" appts))
-                         :deployed-any-nsid (boolean (re-find #"event\.params\.path" route))}
-                        "deployed route forwards any nsid the caller names to the MCP router"))
+      ;; The SvelteKit adapter needed nodejs_compat / nodejs_als. The :esm bundle
+      ;; does not — measured, not assumed: `wrangler dev --local` (wrangler 4.69.0,
+      ;; workerd) served every route identically with the flags and without them
+      ;; (docs/operator-quickstart.md §6). They were removed, and stay removed.
+      true (conj (check :no-sveltekit-compat-flags
+                        0
+                        (count (filter #{"nodejs_compat" "nodejs_als"}
+                                       (or (:compatibility_flags wj) [])))
+                        "adapter-cloudflare required these; the cljs :esm bundle was measured not to"))
 
-      true (conj (check :four-declaration-surfaces-agree
+      true (conj (check :no-svelte-artifact-under-any-name
+                        0
+                        (count (filter #(or (str/ends-with? % ".svelte")
+                                            (str/includes? % "svelte.config")
+                                            (str/includes? % "/svelte/"))
+                                       files))
+                        "catches a return under a name the removal list does not mention"))
+
+      true (conj (check :no-typescript-in-the-appview
+                        []
+                        appview-ts
+                        (str "the appview is ClojureScript now (" (count canonical)
+                             " files under src/); TypeScript survives only in kotoba/, checked next")))
+
+      ;; ── kotoba/ was measured and KEPT, pinned so it cannot grow silently ────
+      true (conj (check :kotoba-slice-kept-and-pinned
+                        {:files 7 :sha-mismatches []}
+                        {:files (count kotoba-files)
+                         :sha-mismatches (vec (keep (fn [[f want]]
+                                                      (let [got (sha256 f)]
+                                                        (when-not (= want got) (str f " " (or got "MISSING")))))
+                                                    {"kotoba/src/index.ts" "ed76cdcd84c97c496cef3272793abde74c9d45c6b647ef86bdc65a6d082e909b"
+                                                     "kotoba/src/registry.ts" "5065097c4594357eac1571f28bda89188f4bb6403df74881d691e6af5f331969"
+                                                     "kotoba/src/types.ts" "3f630435af6e33dba2e13c1cc5ccfe948365349e9497eee9686b9bd680b88307"
+                                                     "kotoba/test/harai.test.ts" "7933de816e6265ecff23c4dc4d33d4173f5c5dc6d1181fef1786b22404cb92c8"
+                                                     "kotoba/package.json" "3e29e62d9cd7306003996fe95defb9c66b9f6eb1cf24a578977535daa361e48f"
+                                                     "kotoba/tsconfig.json" "95a429e51d6162cb7205b603f745e7604d93ffbb1ea6c346e5c6215a79ae541e"
+                                                     "kotoba/vitest.config.ts" "f82a551ef4da1c9cbf17985a3bee96eee450a3e4a46bff0d96c6150263121eff"}))}
+                        (str "the ledger slice is in no bundle and referenced by nothing the migration "
+                             "replaced, so it was kept untouched — not deleted on an 'all TypeScript' reading")))
+
+      ;; ── inherited custody ──────────────────────────────────────────────────
+      true (conj (check :inherited-files-unchanged
+                        []
+                        (vec (keep (fn [[f want]] (let [got (sha256 f)]
+                                                    (when-not (= want got) (str f " " (or got "MISSING")))))
+                                   preserved))
+                        "files the migration deliberately did not touch, by content"))
+
+      ;; ── the page renders its inputs rather than baked constants ─────────────
+      true (conj (check :page-renders-its-inputs
                         true
-                        (= declared wcaps bmeth fmeth)
-                        (str "kotodama.jsonld / wrangler APP_CAPABILITIES / bpmn serviceTasks / app.ts "
-                             "all name the same " (count declared) " methods")))
+                        (boolean (and viewsrc workersrc
+                                      (str/includes? viewsrc "[{:keys [routes vars mcp-url methods]}]")
+                                      (str/includes? viewsrc "(route-rows routes)")
+                                      (str/includes? workersrc ":routes route/routes")
+                                      (str/includes? workersrc "(route/declared-methods (:APP_CAPABILITIES e))")))
+                        (str "the route table and the declared methods reach the page as arguments; "
+                             "the defect this migration killed was a page printing 'Routes 0' beside a "
+                             "config declaring two")))
+
+      ;; ── MIGRATION-TODO.md no longer describes two request paths ────────────
+      true (conj (check :migration-todo-describes-one-path
+                        true
+                        (boolean (and todo
+                                      (not (str/includes? todo "which of the two request paths is the service"))
+                                      (str/includes? todo "ClojureScript")))
+                        "the migration made the old wording false; it was updated in the same commit"))
+
+      ;; ── disagreements the migration did NOT touch ──────────────────────────
+      true (conj (check :three-declaration-surfaces-agree
+                        true
+                        (= declared wcaps bmeth)
+                        (str "kotodama.jsonld / wrangler APP_CAPABILITIES / bpmn serviceTasks all name the same "
+                             (count declared) " methods (a fourth surface, the facade's /health body, "
+                             "was removed with the facade)")))
 
       true (conj (check :declared-vs-implemented-overlap
                         #{"getBalance" "listPayments" "listTransactions"}
                         (set overlap)
                         (str (count declared) " declared, " (count impl) " implemented in kotoba/src, "
-                             (count overlap) " in common; "
-                             (count (remove impl declared)) " declared methods have no implementation "
-                             "and " (count (remove declared impl)) " implemented functions are undeclared")))
+                             (count overlap) " in common; " (count (remove impl declared))
+                             " declared methods have no implementation and "
+                             (count (remove declared impl)) " implemented functions are undeclared")))
 
       true (conj (check :wrangler-route-outside-its-declared-zone
                         [{:pattern "harcom.etzhayyim.ai/*" :zone "etzhayyim.com"}]
@@ -243,10 +342,10 @@
     (println)
     (println (str "held " held-n " / changed " (count changed) " / skipped " (count skipped)
                   " of " (count results)))
-    ;; An evidence floor. If the assertion list is ever emptied or filtered down
-    ;; to nothing, "0 changed" must not read as clean.
-    (when (< (count results) 9)
-      (println (str "Refusing to report a pass: expected at least 9 assertions, ran " (count results)))
+    ;; An evidence floor. If the assertion list is ever emptied or filtered down to
+    ;; nothing, "0 changed" must not read as clean.
+    (when (< (count results) 15)
+      (println (str "Refusing to report a pass: expected at least 15 assertions, ran " (count results)))
       (js/process.exit 2))
     (when (seq changed)
       (println "One or more pinned facts moved. If you fixed it, update the assertion here in the same commit.")

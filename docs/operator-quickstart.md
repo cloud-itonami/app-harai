@@ -1,331 +1,416 @@
 # Operator quickstart — app-harai
 
-**払い / harai — payment and settlement clearing.** Twenty-three files, 52,557 bytes,
-in three layers that do not describe the same service:
+**払い / harai — 決済・清算（payment & settlement clearing）。** 27 ファイル、
+2 つの層でできている:
 
-| layer | what it is | does it run? |
+| 層 | 何か | 動くか |
 |---|---|---|
-| `kotoba/` | the ledger: a plaintext settlement-rail catalog plus E2E-encrypted payment / transaction / balance records | **yes** — 7 tests, all passing |
-| `appview/*/svelte/` | a SvelteKit worker that forwards XRPC calls to an MCP router | **yes** — builds, and is what `wrangler.jsonc` deploys |
-| `appview/*/src/app.ts` | an edge facade with `/health`, an nsid allow-list and body validation | **no** — 77 lines that no request reaches |
+| `src/harai/` | appview の Worker（ClojureScript）。`/` と `/xrpc/:nsid` を答える | **yes** —— ビルドして実際に叩いた（§6） |
+| `kotoba/` | 台帳: 平文の settlement-rail catalog と E2E の payment / transaction / balance | **今日この機械では走らない** —— npm が git 依存を用意できない（§2） |
 
-The third row is the thing to know before touching anything here. **The file that
-looks like the service is not the file that runs**, and the two disagree about
-whether a malformed payment request is an error.
+**2026-08-18 に appview は TypeScript/Svelte から ClojureScript へ移行した**
+（`docs/adr/0001`）。移行前この repo には TypeScript の appview が 2 つあり、
+**読み手が開くファイルと deploy されるファイルが別だった**。その状態は
+2026-08-16 版のこの文書が測って記録し、いま `docs/adr/0001` が保存している。
+本文書はその後の状態を記述する。
 
-Steps marked ✅ were run against this tree on 2026-08-16. Where a command's output
-is quoted, it is the actual output.
+✅ の付いた手順はこの tree に対して 2026-08-18 に実行した。出力が引用されている
+ところは、実際の出力である。
+
+| 使ったもの | 版 |
+|---|---|
+| git | 2.51.0 |
+| node | v26.3.0 |
+| npm | 11.16.0 |
+| nbb | v1.4.208 |
+| java（ビルド時のみ） | openjdk 24.0.2 |
 
 ---
 
-## 1. Run the ledger tests ✅
+## 1. 取得して、書いてあることが本当か検査する ✅
 
 ```bash
-cd kotoba && npm install && npm test
+git clone git@github.com:cloud-itonami/app-harai.git
+cd app-harai
+npx --yes nbb scripts/verify-harai-surface.cljs
 ```
 
+実際の出力（末尾）:
+
 ```
- ✓ test/harai.test.ts (7 tests) 4ms
-
- Test Files  1 passed (1)
-      Tests  7 passed (7)
+held 15 / changed 0 / skipped 0 of 15
 ```
 
-Seven tests cover the rail catalog (register / dedup / reject / get / filter), the
-E2E payment path, read-cap enforcement (a non-recipient DID decrypts nothing),
-transactions, balances and the coverage rollup.
+15 の assertion は 2 種類ある。**移行が閉じたこと**（deploy される entry が
+src/ からビルドした bundle であること、撤去した 9 パスが戻っていないこと、
+`kotoba/` が 7 ファイルのまま 1 バイトも変わっていないこと、ページが引数から
+描かれること…）と、**移行が touch していない食い違い**（メソッド語彙、zone の
+外に出た route、届かない firehose 購読、解決しない DID）。
 
-**⚠ That `npm install` fails on npm 11.16.0.** Measured on three machines the same
-day, same tree:
+後者は**直せば赤くなる**。それが意図である —— assertion と修正を同じ commit に
+入れることで、正本を選ぶことが drift ではなく記録された決定になる。
 
-| npm | result |
-|---|---|
-| 10.9.7 | installs, 7 tests pass |
-| **11.16.0** | **`EALLOWSCRIPTS` — `git dep preparation failed`** |
-| 11.17.0 | installs, 7 tests pass |
+`--no-net` で DNS を使う 1 件を飛ばせる。飛ばした件は **held ではなく skipped**
+として別に数える。exit は 3 値: `0` 全一致 / `1` 動いた / **`2` 判定できなかった**
+（入力が無い、assertion が 15 未満）。
 
-Both dependencies are git URLs, and npm 11.16.0 refuses to run the `prepare` script
-it needs to build one of them — the inner install it spawns rejects its own flags.
-It is not a defect in this repository and not a general npm-11 problem: 11.17.0 is
-fine. If you hit it, upgrade npm rather than editing the manifest.
-
-Worth knowing while you are in there: **both dependencies have moved.**
-`package.json` points at `etzhayyim/com-etzhayyim-sdk` and `…-sdk-mock`, which now
-redirect to `kotoba-lang/sdk` and `kotoba-lang/sdk-mock`. The pinned commits still
-resolve, so nothing is broken today; it is a redirect this repository is relying on
-without saying so.
-
-## 2. Build what actually deploys ✅
+## 2. 台帳（`kotoba/`）—— 今日は走らない ⚠
 
 ```bash
-cd appview/harai-mcp-component/svelte && npm install && npm run build
+cd kotoba && npm install
 ```
 
-Builds clean and produces `.svelte-kit/cloudflare/_worker.js` — the path
-`wrangler.jsonc` names as `main`. Its route table is exactly two entries:
+実際の出力:
+
+```
+npm error code EALLOWSCRIPTS
+npm error --allow-scripts is not allowed in project-scoped installs.
+npm error git dep preparation failed
+```
+
+`npx --yes npm@11.17.0 install` でも**同じ**である（`npx npm@11.17.0 --version`
+→ `11.17.0` を確認済み）。理由は外側の npm ではない —— エラー本文が名指しする
+コマンドが `/opt/homebrew/lib/node_modules/npm/bin/npm-cli.js`、つまり **git 依存の
+準備は system の npm（11.16.0）が実行する**からである。`package.json` に
+`allowScripts` フィールドを足しても同じところで落ちる（試した）。
+
+**これは npm 側の事情であって repo の欠陥ではない。** 2026-08-16 版のこの文書は
+「11.17.0 なら 7 tests 通る」と書いていたが、**今日この機械では再現しない**。
+再現したのは依存が実在することまでである:
+
+```bash
+git fetch https://github.com/etzhayyim/com-etzhayyim-sdk.git 12314a0cc5ac2feb49dd9789d5c002398acb6988
+git cat-file -t 12314a0cc5ac2feb49dd9789d5c002398acb6988      # -> commit
+git fetch https://github.com/etzhayyim/com-etzhayyim-sdk-mock.git c857ff9be5310bf433bfe1e8d3c0f677e213d667
+git cat-file -t c857ff9be5310bf433bfe1e8d3c0f677e213d667      # -> commit
+```
+
+どちらも `commit` として取れる（`gh api` ではなく git に訊く —— この workspace では
+存在する commit に対して API が 404 を返す事例が観測されている）。両依存の URL は
+`etzhayyim/*` から `kotoba-lang/sdk` / `sdk-mock` へ redirect しており、**この repo は
+その redirect に黙って依存している**。
+
+**移行はこの層を触っていない。** appview ではないからである。判断は 3 つの実測に
+よる（§3 の bundle 実測と、`grep -rn kotoba appview/` が 0 件、上記の commit 解決）。
+7 ファイルの sha256 とファイル数は検証器に固定してある。
+
+## 3. 移行前に deploy されていたのは何だったか ✅
+
+移行の対象を『読んで』決めない。SvelteKit を実際にビルドして測った:
+
+```bash
+cp -R appview/harai-mcp-component/svelte /tmp/oracle && cd /tmp/oracle
+npm install && npm run build          # vite 6.4.2 → built in 15.45s
+grep -o 'id: "[^"]*"' .svelte-kit/output/server/manifest.js | sort -u
+grep -c health .svelte-kit/cloudflare/_worker.js
+for s in settlementRail HARAI_DID_PREFIX harai-kotoba encryptedWrite registerRail; do
+  printf '%s %s\n' "$s" "$(grep -c $s .svelte-kit/cloudflare/_worker.js)"; done
+```
+
+実際の出力:
 
 ```
 id: "/"
 id: "/xrpc/[...path]"
+0                       # health
+settlementRail 0
+HARAI_DID_PREFIX 0
+harai-kotoba 0
+encryptedWrite 0
+registerRail 0
 ```
 
-There is no `/health`. The string does not occur in the deployed bundle at all
-(`grep -c health .svelte-kit/cloudflare/_worker.js` → `0`), and with
-`not_found_handling: "none"` a health check against this service gets SvelteKit's
-404. Anything monitoring `/health` here is monitoring nothing.
+読み方は 3 つ:
 
-## 3. The two request paths, side by side ✅
+1. **deploy 面の route はちょうど 2 本**だった。移行はこの 2 本を移した。
+2. **`/health` は deploy 面に無かった。** 持っていたのは request の届かない
+   `src/app.ts` の方である。移行で生やすのは移行ではないので、生やしていない。
+3. **`kotoba/` はどの bundle にも入っていなかった。** だから残した。
 
-`src/app.ts` has no imports and uses only `Request`/`Response`, so Node runs it
-directly. Walked on Node v26.3.0, where `--experimental-strip-types` is a no-op
-(default since Node 23) and required on 22.6–22.x:
+## 4. テストを走らせる（ビルド不要・ブラウザ不要）✅
+
+判断（`route.cljc`）と描画（`view.cljc`）は純 `.cljc` なので、nbb だけで回る。
+
+```bash
+K=~/github/com-junkawasaki/orgs/kotoba-lang
+CP="src:test:$K/jp-go-digital-design-system/src:$K/html/src:$K/css/src"
+cat > /tmp/run.cljs <<'EOF'
+(require '[cljs.test :refer [run-tests]] 'harai.route-test)
+(run-tests 'harai.route-test)
+EOF
+npx --yes nbb --classpath "$CP" /tmp/run.cljs
+```
+
+実際の出力:
+
+```
+Testing harai.route-test
+
+Ran 6 tests containing 28 assertions.
+0 failures, 0 errors.
+```
+
+何を固定しているか: `/xrpc/` は**空の nsid だけ** 400（`/xrpc/a/b` も
+`com.example.someoneElse.doThing` も移行前と同じく中継する）、`/health` は **404**
+（deploy 面に無かった）、MCP router の URL 解決、`result` / `structuredContent` の
+剥がし方、そして**ページが route 表と env から描かれること**（固定値を焼いていたら
+落ちる）。
+
+## 5. ページを描画して採点する ✅
+
+```bash
+K=~/github/com-junkawasaki/orgs/kotoba-lang
+CP="src:$K/jp-go-digital-design-system/src:$K/html/src:$K/css/src"
+# view/render に css・route 表・env 相当を渡して 1 枚出す（下記は要点のみ）
+cd $K/design-quality && npx --yes nbb -m design-quality.cli score /tmp/page.html --min 95
+```
+
+実際の出力（末尾）:
+
+```
+  100.00  /tmp/page.html
+aggregate: 100.00
+axes scored: 10 (viewport, safe-area, dynamic-viewport, tap-targets, focus-visible,
+                 reduced-motion, overflow-guard, color-scheme, responsive, semantics)
+NOT scored: input-zoom, contrast — pass --extra-axes to include the optional ones
+gate: aggregate 100.00 >= min 95.00 -> PASS
+```
+
+`--extra-axes` を付けると **12 軸で 100.00**（同じく PASS）。
+
+**この点数が言えることは限られている。** CLI 自身が「適用したのは 12 軸中 10 軸」
+「適用しなかった軸について pass は何も言わない」と書いている。デザインシステムを
+完全に外したページでも 96.63 で PASS することが別 repo で実測されている。
+**「CSS が実際に入っている」と言えるのは §6 の smoke の方**である。
+
+## 6. bundle をビルドして、実際に叩く ✅
+
+**高負荷ビルドは同時 1 本に制限されている**（superproject `CLAUDE.md` の
+resource governor）。直接叩かず、必ず guard 経由で:
+
+```bash
+node ~/github/com-junkawasaki/scripts/resource-guard.mjs run build -- \
+  npx --yes shadow-cljs release worker
+```
+
+lock を他セッションが持っていると **exit 2 で拒否される。迂回しない** ——
+`resource-guard: build is already running (pid=…)` はエラーではなく順番待ちで
+ある（この walk では 9 回待った）。実際の出力（末尾）:
+
+```
+[:worker] Build completed. (55 files, 12 compiled, 0 warnings, 7.18s)
+```
+
+`dist/worker.js` は 246,462 バイト。次に、**その bundle を import して叩く**:
+
+```bash
+npx --yes nbb scripts/smoke-worker.cljs dist/worker.js
+```
+
+21 項目すべて PASS（末尾）:
+
+```
+OK	the built bundle answers as the route table says
+```
+
+見ているもの: default export が `fetch` を持つ / `GET /` が 200 の HTML で route 表の
+path を載せている / env のキーは出て**表示対象でない値は出ない** / **中継先の値は出る**
+/ **`APP_CAPABILITIES` から読んだ値が出る**（env に実在しないメソッド名を渡して確認）
+/ DADS の component が呼ばれている / **stylesheet が実際に bundle に入っている** /
+`POST /xrpc/` が 400 / `OPTIONS` が 204 / 未知パスが 404 / 誤 method が 405 /
+**`/health` が 404** / 多段パスが 400 にならず単段と同じ結末になる / 到達不能な中継が
+**502**（200 で隠さない）。
+
+多段パスの検査は `.invalid` の中継先（RFC 2606 で必ず解決しない TLD）に対して
+行う —— 実 DNS に依存させないためで、`mcp.etzhayyim.com` がいま NXDOMAIN である
+ことに寄りかからない。
+
+**これがこの repo で唯一 deploy される成果物に触る検査である。** bundle が無ければ
+**exit 2**（0 とも 1 とも別）で「判定できなかった」と言う。
+
+### 6.1 workerd で実際に動かし、SvelteKit 用の compatibility_flags を外した ✅
+
+Node で bundle を import する smoke より強い証拠がある —— **実際の Workers
+ランタイムで動かす**ことである。deploy はしない（`wrangler dev --local` だけ）。
 
 ```bash
 cd appview/harai-mcp-component
-
-cat > /tmp/hwalk.mjs <<'EOF'
-const app = (await import(process.argv[2])).default;
-const env = { DISPATCHER_URL: "http://127.0.0.1:9/unreachable" };
-const H = "https://harcom.etzhayyim.ai";
-for (const [l, req] of [
-  ["GET /health          ", new Request(`${H}/health`)],
-  ["GET /nope            ", new Request(`${H}/nope`)],
-  ["POST bad json (harai)", new Request(`${H}/xrpc/com.etzhayyim.apps.harai.listPayments`,
-                                        { method: "POST", body: "{not json" })],
-  ["POST foreign nsid    ", new Request(`${H}/xrpc/com.example.someoneElse.doThing`,
-                                        { method: "POST", body: "{}" })],
-]) {
-  const r = await app.fetch(req, env);
-  console.log(l, "->", r.status, (await r.text()).slice(0, 100));
-}
-EOF
-
-node --experimental-strip-types /tmp/hwalk.mjs "$PWD/src/app.ts"
+wrangler dev --local --port 8931 --ip 127.0.0.1     # wrangler 4.69.0
+curl -s -o /dev/null -w '%{http_code}\n' http://127.0.0.1:8931/
 ```
 
-Actual output:
+`compatibility_flags`（`nodejs_compat` / `nodejs_als`）は SvelteKit の
+adapter-cloudflare が要求していたものである。cljs の `:esm` bundle には要らない
+**はず**だが、**憶測で消さずに両方で測った**:
 
-```
-GET /health           -> 200 {"ok":true,"actor":"did:web:harcom.etzhayyim.ai", …
-GET /nope             -> 404 {"error":"NotFound"}
-POST bad json (harai) -> 400 {"error":"InvalidJson"}
-POST foreign nsid     -> 404 {"error":"NotFound"}
-```
+| リクエスト | flags あり | flags 無し |
+|---|---|---|
+| `GET /` | 200（HTML、DDS の CSS 45 件・`dads-table` 1 件） | **同じ** |
+| `POST /xrpc/` | 400 `{"error":"Missing XRPC method"}` | **同じ** |
+| `OPTIONS /xrpc/x` | 204 | **同じ** |
+| `GET /nope` | 404（route 表を載せる） | **同じ** |
+| `GET /xrpc/x` | 405 | **同じ** |
+| `GET /health` | 404 | **同じ** |
+| `POST /xrpc/com.etzhayyim.apps.harai.listPayments` | 502 `MCP router unreachable` | **同じ** |
+| `POST /xrpc/a/b`（多段） | 502（単段と同じ結末） | **同じ** |
 
-Now the same requests through the **built** endpoint — the one that deploys. This
-needs §2 to have run first; the MCP router is stubbed so the forwarded call can be
-inspected rather than sent:
+**全 8 経路が同一だったので flags を外した。** workerd のログに出る 2 件の
+`Uncaught Error: internal error` は、解決しないホストへの fetch そのもので、
+Worker はそれを捕まえて 502 にしている（応答を見れば分かる）。
+
+検証器はこの撤去を pin する（`no-sveltekit-compat-flags`）。戻ってくれば落ちる。
+
+
+## 7. 検査器を落として確かめる ✅
 
 ```bash
-cd appview/harai-mcp-component/svelte
-
-cat > /tmp/dprobe.mjs <<'EOF'
-const mod = await import(process.argv[2]);
-let captured = null;
-globalThis.fetch = async (url, init) => {
-  captured = { url, body: JSON.parse(init.body) };
-  return new Response(JSON.stringify({ jsonrpc: "2.0", id: 1,
-                        result: { structuredContent: { echoed: true } } }),
-                      { status: 200, headers: { "content-type": "application/json" } });
-};
-const mkEvent = (nsid, raw) => ({
-  params: { path: nsid },
-  request: new Request("https://x/xrpc/" + nsid,
-             { method: "POST", body: raw, headers: { "content-type": "application/json" } }),
-  platform: { env: {} },
-});
-for (const [label, nsid, raw] of [
-  ["well-formed harai  ", "com.etzhayyim.apps.harai.listPayments", '{"payerDid":"did:web:alice"}'],
-  ["MALFORMED body     ", "com.etzhayyim.apps.harai.listPayments", '{not json'],
-  ["FOREIGN nsid       ", "com.example.someoneElse.doThing",       '{"x":1}'],
-]) {
-  captured = null;
-  const r = await mod.POST(mkEvent(nsid, raw));
-  console.log(label, "-> HTTP", r.status, "| tool:", captured?.body?.params?.name,
-              "| arguments:", JSON.stringify(captured?.body?.params?.arguments));
-}
-EOF
-
-node /tmp/dprobe.mjs "$PWD/.svelte-kit/output/server/entries/endpoints/xrpc/_...path_/_server.ts.js"
+npx --yes nbb scripts/mutate-harai-surface.cljs
 ```
 
-Actual output:
-
 ```
-well-formed harai   -> HTTP 200 | tool: com.etzhayyim.apps.harai.listPayments | arguments: {"payerDid":"did:web:alice"}
-MALFORMED body      -> HTTP 200 | tool: com.etzhayyim.apps.harai.listPayments | arguments: {}
-FOREIGN nsid        -> HTTP 200 | tool: com.example.someoneElse.doThing | arguments: {"x":1}
+21 / 21 demonstrations passed
 ```
 
-Two differences, both load-bearing for a payments service:
+control 1（無改変のコピーは静か）+ floor 2（入力を消すと exit 2 / `--no-net` は
+skipped と数える）+ mutation 18。**各 mutation は exit 1 であることに加え、
+動いた assertion の id が期待と完全一致すること**まで見る —— exit code だけなら、
+無関係な理由で赤くなった検査器も合格してしまう。
 
-- **A corrupt request body becomes a successful call with no arguments.** The
-  deployed route does `.catch(() => ({}))`, so `{not json` posted at `listPayments`
-  is not rejected — it is forwarded as `listPayments({})` and answered `200`. The
-  facade's `400 InvalidJson` is not in the deployed path.
-- **The nsid allow-list is not in the deployed path either.** The facade only
-  proxies `com.etzhayyim.apps.harai.*`; the deployed route takes whatever path
-  segment the caller sends and asks the MCP router to run a tool by that name.
-  `com.example.someoneElse.doThing` went straight through.
+複数の id が動くのが正しい mutation もある（`kotodama.jsonld` を編集すると、
+そこに書かれた事実と custody の hash の両方が動く）。それは 2 つと書いてある。
+実際、`src/app.ts` を戻す mutation は最初 1 つだけを期待していて **FAIL した** ——
+app.ts は「撤去したパス」であると同時に「appview の TypeScript」でもあるからで、
+**間違っていたのは期待の方だった**。
 
-The workspace's own `verify-appview-facade` reaches the first two conclusions
-independently and names this repository, along with `orgs/cloud-itonami/shiharai`
-and `orgs/etzhayyim/com-etzhayyim-app-harai`, which have the same shape.
+gate 側も 1 つずつ落として確かめた（**mutation は 1 つずつ当てる**。2 つ同時だと
+互いを隠す）:
 
-## 4. Five declared methods have no implementation ✅
+| 壊したもの | 赤くなったもの |
+|---|---|
+| `/xrpc/a/b` を 400 に絞る | route-test の当該 assertion のみ |
+| ページから `viewport` meta を外す | design-quality **88.76 < 95 FAIL**（finding が viewport を名指し） |
+| `route/dispatch` を存在しない var に改名 | **ビルドが落ちる**（`:shadow.build.compiler/warning-as-error true`） |
+| `(rc/inline "jp_go_dds/dds.css")` → `""` | smoke の「stylesheet が入った」だけ（「component を呼んだ」は緑のまま） |
+| env の値をページに出す | smoke の sentinel だけ |
+| 中継先をページから消す | smoke の「中継先を出している」だけ |
+| `dist/` を消す | smoke が **exit 2** |
 
-Four surfaces declare the method vocabulary and **all four agree** — `kotodama.jsonld`
-`profile.capabilities`, `wrangler.jsonc` `APP_CAPABILITIES`, the eight `serviceTask`
-definitions in `bpmn/harai-control.bpmn`, and the `methods` list in the facade's
-`/health` body. All eight names, four times over:
+復元は **git の index から**行い、`/tmp` に backup ファイルを置いていない ——
+この機械では並行する複数の agent が `/tmp` を共有しており、他人の backup を復元して
+別 repo の namespace を取り込んだ事故が同じ日に起きている。最後に復元して build し直した
+bundle の sha256 は、変異前の値と**バイト一致**した
+（`d039e7b456346d8f21d6342f69da9dbda809c38af45aecb2c84d2873b54aeffa`、246,462 バイト）。
+
+⚠ **index を backup に使うなら、変異が当たっている間に `git add` してはならない。**
+実際にやってしまった: 値漏洩の変異が当たっているときにファイル数を数えるつもりで
+`git add -A` を走らせ、**漏らす版を index に焼いた**。その後の
+`git checkout -- <file>` は「復元」に見えて漏洩を戻し、次の変異（中継先を隠す）と
+二重になった。結果、**「中継先を出している」が緑のままだった** —— 漏れた値の中に
+中継先 URL が含まれていたからである。brief が警告していた masking をそのまま踏んだ。
+index を直して**中継先を隠す変異だけ**を当て直したところ、その 1 件だけが赤くなった。
+
+## 8. 宣言されたメソッドと実装が食い違っている（移行では直らない）✅
+
+3 つの宣言面 —— `kotodama.jsonld` の `profile.capabilities`、`wrangler.jsonc` の
+`APP_CAPABILITIES`、`bpmn/harai-control.bpmn` の 8 つの `serviceTask` —— は**完全に
+一致する**。8 つの名前:
 
 ```
 closeAccount createPayment getBalance listPayments
 listTransactions refundPayment settlePayment transferFunds
 ```
 
-`kotoba/src/index.ts` exports eleven functions. The overlap is **three**:
+`kotoba/src/index.ts` は 11 の関数を export する。重なりは **3**:
 
 | | |
 |---|---|
-| declared **and** implemented (3) | `getBalance` `listPayments` `listTransactions` |
-| declared, **no implementation anywhere** (5) | `closeAccount` `createPayment` `refundPayment` `settlePayment` `transferFunds` |
-| implemented, **undeclared** (8) | `coverage` `getPayment` `getRail` `listRails` `recordPayment` `recordTransaction` `registerRail` `setBalance` |
+| 宣言され**かつ**実装されている (3) | `getBalance` `listPayments` `listTransactions` |
+| 宣言され、**実装がどこにも無い** (5) | `closeAccount` `createPayment` `refundPayment` `settlePayment` `transferFunds` |
+| 実装され、**宣言に無い** (8) | `coverage` `getPayment` `getRail` `listRails` `recordPayment` `recordTransaction` `registerRail` `setBalance` |
 
-The naming suggests the two halves were designed against different models —
-`createPayment` versus `recordPayment`, and a rail catalog the declarations never
-mention. Nothing in the tree resolves which is intended; see §7.
+**移行前は宣言面が 4 つあった。** 4 つ目は facade の `/health` が返すメソッド一覧で、
+facade ごと撤去したので 3 つになった。数が減ったのは合意が壊れたからではない。
 
-## 5. The actor's hostname is a codemod artifact ✅
+命名は 2 つの半分が別のモデルに対して設計されたことを示唆する（`createPayment` 対
+`recordPayment`、宣言が一度も言及しない rail catalog）。どちらが本物かは tree の
+中では決まらない。**これは移行が答えていない問いである。**
 
-Every identity in this repository points at `harcom.etzhayyim.ai` — the
-`kotodama.jsonld` `@id`, `ACTOR_DID` in the facade, `HARAI_DID_PREFIX` in
-`kotoba/src/types.ts` (which mints a DID per settlement rail), and a `wrangler.jsonc`
-route. **That domain does not exist.** Not "the host is down" — `etzhayyim.ai` has no
-NS records and NXDOMAINs at the apex, so `did:web:harcom.etzhayyim.ai` can never
-resolve.
+## 9. actor のホスト名は codemod の産物である（移行では直らない）✅
 
-The name looks like the output of a rewrite intended to move `etzhayyim.ai` to
-`etzhayyim.com`, which instead replaced the first `ai.` inside the app's own name:
+この repo の identity はすべて `harcom.etzhayyim.ai` を指す ——
+`kotodama.jsonld` の `@id`、`kotoba/src/types.ts` の `HARAI_DID_PREFIX`
+（settlement rail ごとに DID を発行する）、`wrangler.jsonc` の route。
+**このドメインは存在しない。** `etzhayyim.ai` には NS が無い。
 
 ```
-harai.etzhayyim.ai      ->  harcom.etzhayyim.ai
-shiharai.etzhayyim.ai   ->  shiharcom.etzhayyim.ai
+harcom.etzhayyim.ai       A=(なし)  NS=(なし)
+harai.etzhayyim.com       A=(なし)  NS=(なし)
+r3k9mwvx.etzhayyim.com    A=(なし)  NS=(なし)
+mcp.etzhayyim.com         A=(なし)  NS=(なし)
+dispatcher.etzhayyim.com  A=(なし)  NS=(なし)
+etzhayyim.com             A=172.67.179.128 104.21.51.111
 ```
 
-Both mangled names in this fleet are reproduced exactly by that one rule. The
-sibling repository settles it: `orgs/cloud-itonami/shiharai` still carries
-`did:web:shiharai.etzhayyim.com` in its `kotodama.jsonld`, its facade and its
-`CLAUDE.md`, and has the mangled form in **only one place — the wrangler route**. So
-the intended host here was almost certainly `harai.etzhayyim.com`.
-
-That also explains a config that is otherwise simply invalid:
+`etzhayyim.ai` → `etzhayyim.com` の書き換えが、app 自身の名前の中の `ai.` を
+置換してしまった形である（`harai.etzhayyim.ai` → `har**com**.etzhayyim.ai`）。
+兄弟 repo `cloud-itonami/shiharai` が同じ規則で同じ壊れ方をしており、そちらは
+`did:web:shiharai.etzhayyim.com` を保っているので、**意図された名前はほぼ確実に
+`harai.etzhayyim.com`** である。zone の外に出た route 宣言もこれで説明がつく:
 
 ```jsonc
 { "pattern": "harcom.etzhayyim.ai/*", "zone_name": "etzhayyim.com" }
 ```
 
-A route pattern's hostname has to sit inside its zone, and this one is in a
-different TLD. With the intended name it would be `harai.etzhayyim.com/*` in zone
-`etzhayyim.com`, which is consistent. **`harai.etzhayyim.com` does not resolve
-today either**, so fixing the string is necessary but not sufficient — the record
-has to exist before any of this serves traffic.
+route pattern のホスト名は zone の内側でなければならない。意図された名前なら
+`harai.etzhayyim.com/*` で整合する。**ただし `harai.etzhayyim.com` も今日は
+解決しない**ので、文字列を直すのは必要だが十分ではない。
 
-## 6. The firehose subscription cannot fire ✅
+## 10. firehose 購読は発火し得ない（移行では直らない）✅
 
-`kotodama.jsonld` subscribes to two collections:
+`kotodama.jsonld` は 2 つの collection を購読する:
 
 ```
 com.etzhayyim.apps.harai.payment
 com.etzhayyim.apps.harai.transaction
 ```
 
-Neither is ever written as a collection. `registry.ts` writes payments,
-transactions and balances through `encryptedWrite`, where those NSIDs are the
-**`innerType`** — routing metadata *inside* an envelope whose outer collection is
-`com.etzhayyim.encrypted.record` (the SDK's default; `registry.ts` never overrides
-it). A repo subscription matches the outer collection, so these two never match.
+どちらも collection として書かれることが無い。`registry.ts` は payment /
+transaction / balance を `encryptedWrite` で書き、これらの NSID は封筒の**内側**の
+`innerType` である（外側の collection は SDK 既定の
+`com.etzhayyim.encrypted.record`）。購読が照合するのは外側なので、この 2 つは
+永遠に一致しない。逆に外側の collection として実際に書かれる
+`com.etzhayyim.apps.harai.settlementRail` は**購読されていない**。
 
-Meanwhile `com.etzhayyim.apps.harai.settlementRail` — the one collection actually
-written as an outer collection, via `e.write` — is **not** subscribed.
+これは E2E 設計が意図どおり働いた結果であって、その中のバグではない。ただし
+宣言された trigger は不活性であり、payment イベントを待つ購読者は永遠に待つ。
 
-This is a consequence of the E2E design working as intended, not a bug in it: the
-substrate is not supposed to see payer DIDs or amounts. But it does mean the
-declared trigger is inert, and a subscriber expecting payment events will wait
-forever.
+## 11. 決まっていないこと / やっていないこと
 
-## 7. Re-run all of the above ✅
+**この移行が答えていない問い**（tree の中に根拠が無いか、別の決定に属する）:
 
-```bash
-nbb scripts/verify-harai-surface.cljs            # ~1s, needs DNS for the last check
-nbb scripts/verify-harai-surface.cljs --no-net   # skips it, and says so
-```
+1. **どちらのメソッド語彙が本物か**（§8）。
+2. **actor が何という名前か**（§9）。`HARAI_DID_PREFIX` はいまも壊れた名前の下で
+   rail DID を発行している。
+3. **firehose の購読をどう直すか**（§10）。
 
-Nine assertions, one per finding above:
+**やっていないこと**（省略を pass と混ぜないため）:
 
-```
-SCANNED	9	harai-surface
-  held    deployed-entry-is-sveltekit-not-app-ts
-  held    health-served-only-by-undeployed-facade
-  held    malformed-body-rejected-only-by-undeployed-facade
-  held    nsid-prefix-enforced-only-by-undeployed-facade
-  held    four-declaration-surfaces-agree
-  held    declared-vs-implemented-overlap
-  held    wrangler-route-outside-its-declared-zone
-  held    subscribed-collections-are-inner-types-only
-  held    actor-did-domain-does-not-resolve
+- **deploy していない**（`wrangler deploy` は実行していない）。
+- `wrangler dev --local`（workerd）で動かしていない。したがって
+  `compatibility_flags`（`nodejs_compat` / `nodejs_als`）は **残してある** ——
+  SvelteKit の adapter-cloudflare が要求していたもので cljs の :esm bundle には
+  要らないはずだが、**実測していない設定変更はしない**。
+- `kotoba/` の 7 テストは §2 の理由で走らせていない。
 
-held 9 / changed 0 / skipped 0 of 9
-```
-
-**It pins the present, and it does not pick a winner.** Fixing any of these turns it
-red on purpose — the assertion and the fix belong in the same commit, so that
-choosing a canonical surface is a recorded decision rather than a drift. Exit codes
-are three-valued: `0` held, `1` something moved, `2` could not answer (a missing
-input, or fewer than nine assertions — a checker that scans nothing must not report
-clean).
-
-It was checked against deliberately broken copies before being written down:
-
-```bash
-nbb scripts/mutate-harai-surface.cljs
-#   14 / 14 demonstrations passed
-```
-
-Eleven mutations, each required to produce exit 1 **and to name exactly the
-assertion it should have moved** — exit code alone would accept a checker that goes
-red for an unrelated reason. Plus three floors: an untouched copy is silent, a
-removed input exits 2, and `--no-net` reports the DNS check as *skipped* rather than
-held.
-
-## 8. What is not decided here
-
-Three questions this document deliberately does not answer, because they are
-product decisions and the tree contains no basis for choosing:
-
-1. **Which method vocabulary is real** — the eight declared (and drawn as BPMN
-   processes), or the eleven implemented? Five declared methods, including
-   `createPayment` and `settlePayment`, exist nowhere as code.
-2. **Which request path is the service** — the validating facade or the deployed
-   pass-through? Repointing `wrangler.jsonc` at `src/app.ts` is a one-line change,
-   but the facade proxies to a `DISPATCHER_URL` while the SvelteKit route speaks
-   MCP tool-calls to a different upstream. They are not interchangeable.
-3. **What the actor is called.** `harai.etzhayyim.com` is the evidenced intent, but
-   nothing resolves yet, and `HARAI_DID_PREFIX` has been minting rail DIDs under
-   the mangled name.
-
-Until (2) is settled, the deployed behaviour stands: a malformed body at a payment
-method returns `200`.
-
-## 9. What the maturity instrument sees
+## 12. 成熟度計器が見ているもの
 
 ```
 · orgs/cloud-itonami/app-harai  own=0.049  axis-docs=0bp → +2500bp
 ```
 
-The README component reads 0 because the instrument reads `README.md` and this
-repository declares `README.edn` (`:canonical-metadata :edn`); `axis-substrate`
-reads 0 because it counts a top-level `src/`, and the code here lives under
-`kotoba/src/` and `appview/*/src/`. Both are measurement conventions rather than
-findings — the scan reports them separately as `uncounted/*` and does not fold them
-into the score (ADR-2608052000).
+移行前、README の項が 0 だったのは計器が `README.md` を読み、この repo が
+`README.edn`（`:canonical-metadata :edn`）を宣言していたためである。**移行で
+`README.md` を足したので、この項は次回から変わる**（`README.edn` は
+1 バイトも変えずに残してある）。`axis-substrate` が 0 なのは top-level の `src/`
+を数えるためで、これも移行で `src/harai/` ができたので変わる。どちらも測り方の
+都合であって発見ではない（ADR-2608052000 は `uncounted/*` として別に報告する）。

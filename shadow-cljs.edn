@@ -1,0 +1,26 @@
+;; harai appview の Worker。:esm、先例は cloud-itonami-marketplace-listing と
+;; cloud-itonami/app-ongakuka。
+;;
+;; wrangler.jsonc の main は ../../dist/worker.js を指し、それは src/ の
+;; ソースからコンパイルされたこの bundle である。移行前は SvelteKit のビルド
+;; 出力を指しており、読み手が開く TypeScript はどの bundle にも入っていなかった
+;; （docs/adr/0001）。
+;;
+;; :warnings-as-errors は装飾ではない。shadow は未宣言・改名された var を
+;; WARNING として扱うので、`shadow-cljs release worker` は exit 0 のまま
+;; 最初のリクエストで `Cannot read properties of undefined` を投げる bundle を
+;; 書く。つまり「ビルドが通った」は検査ですらなかった —— **落ちようがなかった**。
+{:deps {:aliases [:cljs]}
+ :builds
+ {:worker
+  {:target :esm
+   :output-dir "dist"
+   :modules {:worker {:exports {default harai.worker/handler}}}
+   ;; NOTE このキーは :compiler-options の下に置く。:build-options ではない ——
+   ;; shadow が読むのは [:compiler-options :warnings-as-errors]
+   ;; (shadow/build/compiler.clj の `should-warning-throw?`)。:build-options に
+   ;; 置くと黙って無視される。それはこの option が防ごうとしている失敗そのもの
+   ;; （落ちようのない fix）である。
+   :compiler-options {:output-feature-set :es2020
+                      :infer-externs :auto
+                      :warnings-as-errors true}}}}
