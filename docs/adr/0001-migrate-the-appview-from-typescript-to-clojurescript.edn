@@ -1,0 +1,191 @@
+[{:db/id -1
+  :adr/id "app-harai-0001"
+  :adr/title "appview を TypeScript/Svelte から ClojureScript へ移す"
+  :adr/status "accepted"
+  :adr/date "2026-08-18"
+  :adr/doc_type "adr"
+  :adr/source-format "edn"
+  :adr/body "
+# ADR-0001: appview を TypeScript/Svelte から ClojureScript へ移す
+
+**Status**: accepted / **Date**: 2026-08-18 / **Deciders**: Jun Kawasaki
+
+## Context
+
+この repo の appview は TypeScript が 2 つあり、互いに違うサービスを記述していた。
+
+1. `appview/harai-mcp-component/svelte/` — SvelteKit の worker。**これが deploy
+   される**（`wrangler.jsonc` の `main` が `svelte/.svelte-kit/cloudflare/_worker.js`
+   を指す）。route は `/` と `/xrpc/[...path]` の 2 本。
+2. `appview/harai-mcp-component/src/app.ts` — `/health`・nsid の allow-list・
+   壊れた body の `400 InvalidJson` を持つ facade。**どの request も届かない** 77 行。
+
+読み手が開くのは (2) の方で、動くのは (1) である。両者は「壊れた支払い要求が
+エラーかどうか」で食い違っていた。これは docs/operator-quickstart.md が
+2026-08-16 に測って記録した状態で、`scripts/verify-harai-surface.cljs` が
+『どちらが正本かは決めない』まま pin していた。
+
+さらに公開ページ (`+page.svelte`) は `routeCount: 0` / `routes: []` / `vars: []` を
+literal で持っており、同じディレクトリの `wrangler.jsonc` が route 2 本・var 8 個を
+宣言していることに気づけなかった。
+
+**この workspace の正本言語は cljs と kotoba である。** superproject CLAUDE.md の
+runtime 順序は kotoba wasm > clojurewasm > ClojureScript > nbb で、TypeScript は
+そこに無い。候補の 2 つはどちらも TypeScript なので、どちらを選んでも正本には
+着地しない。
+
+## Decision
+
+**deploy されていた面（SvelteKit の pass-through）を ClojureScript に移し、
+appview の TypeScript と Svelte を撤去する。**
+
+    src/harai/route.cljc    判断（どの handler が答えるか）
+    src/harai/view.cljc     ページ（jp-go-dds の hiccup）
+    src/harai/worker.cljs   Request/Response に触る唯一の層
+            ↓ shadow-cljs :target :esm
+    dist/worker.js          wrangler.jsonc の main が指すもの
+
+先例は同じ org の cloud-itonami/app-ongakuka と
+cloud-itonami-marketplace-listing（`src/*.cljc` → shadow-cljs :esm → dist/worker.js）。
+
+入口を `.kotoba` ではなく cljs に置くのは ADR-2606290000 の判断で、kotoba の
+ingress capability が `:native-aot` / `:wasm-aot` とも pending だからである。
+判断を `.cljc` に切り出してあるのは、ブラウザもビルドも無しにテストするためで
+あり、ingress が qualify した時に最初に `.kotoba` へ移る部分だからでもある。
+
+### これは quickstart §11 の問い (2) への答えでもある
+
+『どちらの request path がサービスか』は 2026-08-16 の時点で意図的に開いていた。
+**deploy されていた方を正本とする**ことで閉じる。facade を選ばなかったのは好みでは
+なく実測による: facade が使う `DISPATCHER_URL` / `DISPATCHER_INTERNAL_SECRET` は
+`wrangler.jsonc` に 1 つも宣言が無く、宛先 `dispatcher.etzhayyim.com` は DNS で
+解決しない。**binding の無い経路を移植して『移行済み』と言わない。**
+
+### 実測（この決定の根拠。すべて 2026-08-18）
+
+SvelteKit を実際にビルドして（`npm install && npm run build`、vite 15.45s）
+出力を測った:
+
+- route id は `\"/\"` と `\"/xrpc/[...path]\"` の **2 本だけ**
+- `_worker.js` 内の `health` は **0 件** —— facade の `/health` は deploy 面に無い
+- `_worker.js` 内の `settlementRail` / `HARAI_DID_PREFIX` / `harai-kotoba` /
+  `encryptedWrite` / `registerRail` は **すべて 0 件** —— `kotoba/` はどの bundle
+  にも入っていない
+
+### 持ち越さなかった経路（黙って消していない）
+
+facade にあって deploy されていなかったもののうち、`/health`、nsid allow-list、
+壊れた body の `400 InvalidJson`、`DISPATCHER_URL` proxy は**移していない**。
+前 3 つは deploy 面に存在しなかったので、足すのは移行ではなく新設である。
+4 つ目は binding が無く宛先も解決しない。必要になった時点で route.cljc に足し、
+テストと binding を伴って戻す。
+
+多段パス（`/xrpc/a/b`）と宣言外 nsid は**移行前と同じく中継する**。移行前の
+`[...path]` は空文字だけを 400 にしており、`com.example.someoneElse.doThing` は
+そのまま tool 名として転送していた（quickstart §3 と ADR 冒頭の実測）。**絞るのは移行では
+なく方針変更**なので、この commit ではしない。
+
+呼び手の header も移行前と同じく上流へ渡す（`host` だけ落とす）。CORS の
+allow-headers に `authorization` が入っており、固定の header 集合に置き換えると
+呼び手の認証が router に届かなくなる —— それは移行ではなく機能の削除である。
+`x-etzhayyim-bff` の値だけは `sveltekit-edge-bff` → `cljs-esm-worker` にした。
+この header は『どの BFF が中継したか』を名乗るものなので、SvelteKit を名乗り
+続ける方が嘘になる。
+
+### `kotoba/` は TypeScript のまま残した
+
+この repo の TypeScript を全部消すのは移行ではなく破壊である。`kotoba/` は決済の
+台帳実装（settlement rail catalog + E2E ledger）であって appview ではない。
+残す条件を 3 つとも測った: **どの bundle にも入っていない**（上記の 0 件）、
+**移行が置き換えるものから参照されていない**（`grep -rn kotoba appview/` が 0 件）、
+**依存が解決する**（pin された 2 commit は git で `type=commit` として取得できる）。
+7 ファイルの sha256 とファイル数 7 を検証器に固定したので、黙って増えることも
+変わることもできない。
+
+⚠ ただし今日この機械では `npm install` が通らない（npm 11.16.0 の
+`EALLOWSCRIPTS`。`npx npm@11.17.0` でも同じで、内側の install が system の npm を
+呼ぶため）。したがって『7 tests all passing』は**今日は再現していない** ——
+再現したのは依存 commit が解決することまでである。npm 側の事情であって repo の
+欠陥ではないが、通っていない検査を通ったことにしない。
+
+### UI
+
+基盤は jp-go-digital-design-system（skill kotoba-uiux が定める新規 UI の base）。
+色・寸法は `--hig-*` トークン契約のみ、app 固有 CSS は 3 行。CSS は
+`shadow.resource/inline` で bundle に焼く（外部リクエストゼロ方針）。
+
+ページが描くのは**渡された値だけ**である: route 表（`harai.route/routes`）と
+env のキー、中継先の値、`APP_CAPABILITIES` から読んだメソッド名。`kotoba/src` の
+実装数のような『repo についての事実』は渡していない —— Worker は実行時にそれを
+測れないので、渡せば必ず焼いた定数になり、それはこの移行が直した欠陥そのもの
+である。
+
+## 検証（この ADR を書いた時点で実際に通したもの）
+
+- `harai.route-test`: **6 tests / 28 assertions、0 failures**（nbb、ビルド不要）
+- ページ描画 → design-quality **100.00**（gate 95 PASS、`--extra-axes` の 12 軸でも 100.00）
+- `scripts/verify-harai-surface.cljs`: **15 assertions すべて held、exit 0**
+- `scripts/mutate-harai-surface.cljs`: **21 / 21 demonstrations**（control 1・floor 2・
+  mutation 18）。各 mutation は exit 1 かつ**動いた id が期待と完全一致**することまで見る
+- `shadow-cljs release worker`: **55 files / 12 compiled / 0 warnings / 7.18s**、
+  `dist/worker.js` 246,462 bytes
+- `scripts/smoke-worker.cljs`: ビルド済み bundle を import して **21 項目すべて PASS**
+
+### 検査が落ちることを実際に見た（gate ごとに 1 回以上）
+
+| 壊したもの | 赤くなったもの |
+|---|---|
+| `/xrpc/a/b` を 400 に絞る | route-test の当該 assertion（他は緑のまま） |
+| ページから viewport meta を外す | design-quality **88.76 < 95 FAIL**、finding が viewport を名指し |
+| `route/dispatch` を存在しない var に改名 | **ビルドが落ちる**（`:warnings-as-errors`。入れる前は WARNING + exit 0 だった） |
+| `(rc/inline \"jp_go_dds/dds.css\")` → `\"\"` | smoke の『stylesheet が入った』だけが赤、『component を呼んだ』は緑のまま |
+| env の値をページに出す | smoke の sentinel だけが赤 |
+| 中継先をページから消す | smoke の『中継先を出している』だけが赤 |
+| bundle を消す | smoke が **exit 2**（0 とも 1 とも別） |
+
+**mutation は 1 つずつ当てた。** 復元は `/tmp` の backup ではなく git の index から
+行った —— この機械では並行する複数の agent が `/tmp` を共有しており、他人の backup を
+復元して別 repo の namespace を取り込んだ事故が同日に起きている。最後に復元して
+build し直した bundle の sha256 は変異前と**バイト一致**した
+（`d039e7b456346d8f21d6342f69da9dbda809c38af45aecb2c84d2873b54aeffa`、246,462 バイト）。
+
+⚠ **ただし index を backup にするなら、変異が当たっている間に `git add` してはならない。**
+実際に踏んだ: 値漏洩の変異が当たっている最中に、無関係な用事で `git add -A` を走らせて
+**漏らす版を index に焼いた**。次の `git checkout --` は復元に見えて漏洩を戻し、
+次の変異（中継先を隠す）と二重に当たった。結果『中継先を出している』は**緑のまま**
+だった —— 漏れた値の中に中継先 URL が入っていたからである。2 つ同時の変異が互いを
+隠すという既知の危険を、**復元の失敗という経路で**踏んだ。index を直して中継先の変異
+だけを当て直すと、その 1 件だけが赤くなった。
+
+## Consequences
+
+- appview の TypeScript は **3 本 → 0 本**、`.cljs`/`.cljc` が **0 本 → 3 本**
+  （+ テスト 1 本）。`kotoba/` の 5 本は据え置きなので `.ts` の合計は 8 → 5。
+- 継承した 5 ファイル（NOTICE / README.edn / migration.edn / kotodama.jsonld /
+  bpmn）と `kotoba/` の 7 ファイルは **1 バイトも変わっていない**（sha256 を
+  検証器に固定）。`wrangler.jsonc` と `MIGRATION-TODO.md` だけは意図的に変更した
+  （main の付け替え、消えた SvelteKit client を指す `assets` の撤去、
+  `APP_FRAMEWORK` の更新、二重 path 前提の記述の訂正）—— **意図的な変更と勝手な
+  変更を区別するため**、この 2 つは hash ではなく内容で検査する。
+- `compatibility_flags`（`nodejs_compat` / `nodejs_als`）は **撤去した**。
+  adapter-cloudflare が要求していたもので cljs の :esm bundle には要らない ——
+  ただし**憶測では消さず、`wrangler dev --local`（wrangler 4.69.0、workerd）で
+  flags あり / 無しの両方を起動し、8 経路すべてが同一の応答であることを確かめてから**
+  外した（quickstart §6.1）。これは Node で bundle を import する smoke より強い
+  証拠である（実際の Workers ランタイムで動かしているため）。検証器が不在を pin する。
+- ホストは相変わらず解決しない。移行はそれを直さない。deploy するか retire するかは
+  別の決定。
+- 決まっていないものは決まっていないまま: **どちらのメソッド語彙が本物か**
+  （宣言 8 / 実装 11 / 重なり 3）と **actor の名前**（`harcom.etzhayyim.ai` は
+  codemod artifact、evidenced intent は `harai.etzhayyim.com`）。どちらも
+  `scripts/verify-harai-surface.cljs` が現状を pin している。
+
+## やっていないこと
+
+- **deploy していない**（`wrangler deploy` は実行していない。`wrangler dev --local`
+  までである）。
+- `kotoba/` のテスト（7 本）は上記の npm の事情で走らせていない。**したがってこの
+  ADR は『台帳が動く』とは言わない** —— 言えるのは依存 commit が解決することまでである。
+- 実 MCP router に対する中継は試していない（`mcp.etzhayyim.com` が解決しないため）。
+  中継の形は smoke（`.invalid` 宛）と workerd の 502 で確かめた。
+"}]

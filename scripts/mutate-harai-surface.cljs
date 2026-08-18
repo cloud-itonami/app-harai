@@ -11,10 +11,13 @@
 ;; The second requirement is the one that matters. Exit code alone would accept a
 ;; checker that goes red for the wrong reason — and a mutation that breaks a
 ;; different assertion than intended looks, from the exit code, like a successful
-;; demonstration (CLAUDE.md, ADR-2608136000).
+;; demonstration (CLAUDE.md, ADR-2608136000). Several mutations here legitimately
+;; move TWO ids (editing kotodama.jsonld moves both the fact it states and the
+;; custody hash that pins the file); those are written down as two, not hidden.
 ;;
-;; It also pins both floors: an untouched copy must exit 0, and a copy with an
-;; input removed must exit 2 — not 0, and not 1.
+;; It also pins three floors: an untouched copy exits 0, a copy with an input
+;; removed exits 2 — not 0 and not 1 — and --no-net reports the DNS check as
+;; skipped rather than held.
 ;;
 ;;   nbb scripts/mutate-harai-surface.cljs        # from the repo root
 
@@ -28,9 +31,9 @@
 (def APPVIEW "appview/harai-mcp-component")
 (def KOTODAMA (str APPVIEW "/kotodama.jsonld"))
 (def WRANGLER (str APPVIEW "/wrangler.jsonc"))
-(def APPTS    (str APPVIEW "/src/app.ts"))
-(def ROUTE    (str APPVIEW "/svelte/src/routes/xrpc/[...path]/+server.ts"))
+(def SHADOW   "shadow-cljs.edn")
 (def INDEX    "kotoba/src/index.ts")
+(def WORKER   "src/harai/worker.cljs")
 
 (defn sub!
   "Replace `from` with `to` in file `f` under root `r`. Fails loudly if `from` is
@@ -43,44 +46,83 @@
       (throw (js/Error. (str "mutation target absent in " f ": " (pr-str from)))))
     (fs/writeFileSync p (str/replace s from to))))
 
+(defn write! [r f content]
+  (let [p (path/join r f)]
+    (fs/mkdirSync (path/dirname p) #js {:recursive true})
+    (fs/writeFileSync p content)))
+
 (def mutations
   ;; [label expected-changed-ids mutate-fn]
-  [["wrangler main points at the facade"
-    #{:deployed-entry-is-sveltekit-not-app-ts}
-    (fn [r] (sub! r WRANGLER "\"main\": \"svelte/.svelte-kit/cloudflare/_worker.js\""
-                  "\"main\": \"src/app.ts\""))]
+  [["wrangler main points back at the SvelteKit output"
+    #{:deployed-entry-is-the-cljs-bundle}
+    (fn [r] (sub! r WRANGLER "\"main\": \"../../dist/worker.js\""
+                  "\"main\": \"svelte/.svelte-kit/cloudflare/_worker.js\""))]
 
-   ["the facade stops serving /health"
-    #{:health-served-only-by-undeployed-facade}
-    (fn [r] (sub! r APPTS "url.pathname === \"/health\"" "url.pathname === \"/_nope\""))]
+   ["shadow exports a different namespace than wrangler builds"
+    #{:deployed-entry-is-the-cljs-bundle}
+    (fn [r] (sub! r SHADOW "harai.worker/handler" "harai.other/handler"))]
 
-   ["a deployed route starts serving health"
-    #{:health-served-only-by-undeployed-facade}
-    (fn [r] (let [d (path/join r APPVIEW "svelte/src/routes/health")]
-              (fs/mkdirSync d #js {:recursive true})
-              (fs/writeFileSync (path/join d "+server.ts") "export const GET = () => new Response('ok');\n")))]
+   ["warnings-as-errors moves to :build-options, where shadow ignores it"
+    #{:warnings-as-errors-in-compiler-options}
+    (fn [r] (sub! r SHADOW
+                  ":compiler-options {:output-feature-set :es2020\n                      :infer-externs :auto\n                      :warnings-as-errors true}"
+                  ":build-options {:warnings-as-errors true}\n   :compiler-options {:output-feature-set :es2020\n                      :infer-externs :auto}"))]
 
-   ["the facade stops rejecting malformed bodies"
-    #{:malformed-body-rejected-only-by-undeployed-facade}
-    (fn [r] (sub! r APPTS "InvalidJson" "SomethingElse"))]
+   ["the removed facade comes back at its old path"
+    ;; two ids, honestly: app.ts is both a named removal AND TypeScript in the
+    ;; appview. Writing #{:second-request-path-is-gone} alone was wrong about the
+    ;; repository, not about the checker — measured 2026-08-18.
+    #{:second-request-path-is-gone :no-typescript-in-the-appview}
+    (fn [r] (write! r (str APPVIEW "/src/app.ts")
+                    "export default { async fetch() { return new Response('back'); } };\n"))]
 
-   ["the deployed route stops swallowing malformed bodies"
-    #{:malformed-body-rejected-only-by-undeployed-facade}
-    (fn [r] (sub! r ROUTE ".catch(() => ({}))" ".catch((e) => { throw e; })"))]
+   ["the SvelteKit compatibility flags come back"
+    #{:no-sveltekit-compat-flags}
+    (fn [r] (sub! r WRANGLER "\"compatibility_date\": \"2025-03-17\","
+                  "\"compatibility_date\": \"2025-03-17\",\n  \"compatibility_flags\": [\"nodejs_compat\", \"nodejs_als\"],"))]
 
-   ["the facade stops restricting the nsid prefix"
-    #{:nsid-prefix-enforced-only-by-undeployed-facade}
-    (fn [r] (sub! r APPTS "NSID_PREFIX" "ANY_NSID_AT_ALL"))]
+   ["a Svelte file returns under a name the removal list never mentioned"
+    #{:no-svelte-artifact-under-any-name}
+    (fn [r] (write! r (str APPVIEW "/ui/+landing.svelte") "<main>back</main>\n"))]
+
+   ["TypeScript reappears in the appview under a new name"
+    #{:no-typescript-in-the-appview}
+    (fn [r] (write! r (str APPVIEW "/src/handler.ts") "export const x = 1;\n"))]
+
+   ["the kotoba slice grows a file"
+    #{:kotoba-slice-kept-and-pinned}
+    (fn [r] (write! r "kotoba/src/extra.ts" "export const extra = true;\n"))]
+
+   ["a kotoba file is edited"
+    #{:kotoba-slice-kept-and-pinned}
+    (fn [r] (sub! r "kotoba/vitest.config.ts" "export default" "// touched\nexport default"))]
+
+   ["an inherited file is edited"
+    #{:inherited-files-unchanged}
+    (fn [r] (sub! r "NOTICE" "This product includes" "This product now includes"))]
+
+   ["the page goes back to a baked constant instead of the route table"
+    #{:page-renders-its-inputs}
+    (fn [r] (sub! r WORKER ":routes route/routes" ":routes []"))]
+
+   ["the page stops reading APP_CAPABILITIES from env"
+    #{:page-renders-its-inputs}
+    (fn [r] (sub! r WORKER "(route/declared-methods (:APP_CAPABILITIES e))"
+                  "[\"createPayment\" \"listPayments\"]"))]
+
+   ["MIGRATION-TODO.md goes back to describing two request paths"
+    #{:migration-todo-describes-one-path}
+    (fn [r] (sub! r "MIGRATION-TODO.md" "**The appview is ClojureScript as of 2026-08-18**"
+                  "What is not settled is which of the two request paths is the service. Was:"))]
 
    ["one declaration surface renames a method"
-    ;; renames a method outside the 3-method overlap, so ONLY the agreement
-    ;; assertion may move — if the overlap assertion also fires, the mutation
-    ;; was not the surgical one this case claims to be
-    #{:four-declaration-surfaces-agree}
+    ;; kotodama.jsonld is also custody-pinned, so BOTH ids must move — a mutation
+    ;; that moved only one of them would mean a pin had stopped looking.
+    #{:three-declaration-surfaces-agree :inherited-files-unchanged}
     (fn [r] (sub! r KOTODAMA "\"closeAccount\"" "\"closeAccountV2\""))]
 
    ["the implementation grows a declared method"
-    #{:declared-vs-implemented-overlap}
+    #{:declared-vs-implemented-overlap :kotoba-slice-kept-and-pinned}
     (fn [r] (sub! r INDEX "  coverage,\n" "  coverage,\n  createPayment,\n"))]
 
    ["the stray route is moved into its zone"
@@ -89,23 +131,30 @@
                   "\"pattern\": \"harcom.etzhayyim.com/*\""))]
 
    ["the firehose subscribes to the plaintext collection"
-    #{:subscribed-collections-are-inner-types-only}
+    #{:subscribed-collections-are-inner-types-only :inherited-files-unchanged}
     (fn [r] (sub! r KOTODAMA "\"com.etzhayyim.apps.harai.transaction\""
                   "\"com.etzhayyim.apps.harai.settlementRail\""))]
 
    ["the actor DID moves to a domain that resolves"
-    #{:actor-did-domain-does-not-resolve}
+    #{:actor-did-domain-does-not-resolve :inherited-files-unchanged}
     (fn [r] (sub! r KOTODAMA "\"@id\": \"did:web:harcom.etzhayyim.ai\""
                   "\"@id\": \"did:web:etzhayyim.com\""))]])
 
-(defn fresh-copy []
+(defn fresh-copy
+  "A copy of the tracked tree, re-initialised as a git repo. The checker asks git
+   what files exist (rather than walking the filesystem, which would count dist/
+   and node_modules), so the copy has to be able to answer — and `git add -A`
+   makes a file the mutation ADDS visible, which walking a bare tar would not."
+  []
   (let [d (str (fs/mkdtempSync (path/join (os/tmpdir) "harai-mut-")))]
     (cp/execSync (str "git ls-files -z | xargs -0 tar cf - | (cd '" d "' && tar xf -)")
                  #js {:stdio "ignore"})
+    (cp/execSync (str "cd '" d "' && git init -q . && git add -A") #js {:stdio "ignore"})
     d))
 
 (defn run-verifier [dir & args]
-  (let [cmd (str "cd '" dir "' && nbb scripts/verify-harai-surface.cljs " (str/join " " args) " 2>&1")
+  (let [cmd (str "cd '" dir "' && git add -A 2>/dev/null; nbb scripts/verify-harai-surface.cljs "
+                 (str/join " " args) " 2>&1")
         res (try {:out (str (cp/execSync cmd #js {:encoding "utf8"})) :code 0}
                  (catch :default e
                    {:out (str (or (some-> (.-stdout e) str) "") (or (some-> (.-stderr e) str) ""))
@@ -118,8 +167,8 @@
   (let [results (atom [])
         record! (fn [label ok? detail] (swap! results conj {:label label :ok? ok? :detail detail}))]
 
-    ;; floor 1 — an untouched copy is quiet. Without this the whole run could be
-    ;; a checker that is simply always red.
+    ;; floor 1 — an untouched copy is quiet. Without this the whole run could be a
+    ;; checker that is simply always red.
     (let [d (fresh-copy) {:keys [code changed]} (run-verifier d)]
       (record! "control: unmutated copy" (and (= 0 code) (empty? changed))
                (str "exit " code ", changed " (pr-str changed)))
@@ -163,8 +212,8 @@
       (println)
       (println (str (- (count rs) (count bad)) " / " (count rs) " demonstrations passed"))
       ;; evidence floor: this harness is worthless if it silently runs nothing.
-      (when (< (count rs) 14)
-        (println (str "Refusing to report a pass: expected at least 14 demonstrations, ran " (count rs)))
+      (when (< (count rs) 21)
+        (println (str "Refusing to report a pass: expected at least 21 demonstrations, ran " (count rs)))
         (js/process.exit 2))
       (js/process.exit (if (seq bad) 1 0)))))
 
