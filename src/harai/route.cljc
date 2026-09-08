@@ -14,7 +14,7 @@
   移行前の実体は SvelteKit のビルド出力（`svelte/.svelte-kit/cloudflare/_worker.js`）
   で、その route 表はちょうど 2 本（`/` と `/xrpc/[...path]`）だった。実測は
   docs/operator-quickstart.md §3 と ADR-0001。"
-  (:require [clojure.string :as str]))
+  (:require [kotoba.lang.text :as str]))
 
 (def routes
   "公開面をデータとして持つ。ページはこの表を描くので、**答える route と
@@ -52,7 +52,7 @@
   どの request も届かない `src/app.ts` の方で、`grep -c health _worker.js` は 0
   だった（quickstart §3）。移行で新しく生やすのは移行ではないので、生やしていない。"
   [method path]
-  (let [m (keyword (str/lower-case (or method "get")))
+  (let [m (keyword (str/lower (or method "get")))
         p (or path "")]
     (cond
       (and (= m :options) (str/starts-with? p "/xrpc/"))

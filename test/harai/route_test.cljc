@@ -1,6 +1,6 @@
 (ns harai.route-test
   (:require [clojure.test :refer [deftest is testing]]
-            [clojure.string :as str]
+            [kotoba.lang.text :as str]
             [harai.route :as route]
             [harai.view :as view]))
 
