@@ -22,7 +22,7 @@
 ;;   nbb scripts/mutate-harai-surface.cljs        # from the repo root
 
 (ns mutate-harai-surface
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             ["node:fs" :as fs]
             ["node:os" :as os]
             ["node:path" :as path]
