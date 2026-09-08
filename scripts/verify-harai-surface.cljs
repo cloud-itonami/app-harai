@@ -30,7 +30,7 @@
 ;;   2 = could not answer      (an input was missing, or nothing was scanned)
 
 (ns verify-harai-surface
-  (:require [clojure.string :as str]
+  (:require [kotoba.lang.text :as str]
             [cljs.reader :as edn]
             ["node:fs" :as fs]
             ["node:crypto" :as crypto]
