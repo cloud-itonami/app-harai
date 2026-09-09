@@ -6,3 +6,6 @@ dist/
 node_modules/
 .cpcache/
 .wrangler/
+
+# nbb dependency cache -- a build artifact, not source
+.nbb/
