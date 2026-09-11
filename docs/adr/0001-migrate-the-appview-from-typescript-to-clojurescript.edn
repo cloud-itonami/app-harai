@@ -22,7 +22,7 @@
 
 読み手が開くのは (2) の方で、動くのは (1) である。両者は「壊れた支払い要求が
 エラーかどうか」で食い違っていた。これは docs/operator-quickstart.md が
-2026-08-16 に測って記録した状態で、`scripts/verify-harai-surface.cljs` が
+2026-08-16 に測って記録した状態で、`scripts/verify-harai-surface.cljk` が
 『どちらが正本かは決めない』まま pin していた。
 
 さらに公開ページ (`+page.svelte`) は `routeCount: 0` / `routes: []` / `vars: []` を
@@ -39,9 +39,9 @@ runtime 順序は kotoba wasm > clojurewasm > ClojureScript > nbb で、TypeScri
 **deploy されていた面（SvelteKit の pass-through）を ClojureScript に移し、
 appview の TypeScript と Svelte を撤去する。**
 
-    src/harai/route.cljc    判断（どの handler が答えるか）
-    src/harai/view.cljc     ページ（jp-go-dds の hiccup）
-    src/harai/worker.cljs   Request/Response に触る唯一の層
+    src/harai/route.cljk    判断（どの handler が答えるか）
+    src/harai/view.cljk     ページ（jp-go-dds の hiccup）
+    src/harai/worker.cljk   Request/Response に触る唯一の層
             ↓ shadow-cljs :target :esm
     dist/worker.js          wrangler.jsonc の main が指すもの
 
@@ -124,12 +124,12 @@ env のキー、中継先の値、`APP_CAPABILITIES` から読んだメソッド
 
 - `harai.route-test`: **6 tests / 28 assertions、0 failures**（nbb、ビルド不要）
 - ページ描画 → design-quality **100.00**（gate 95 PASS、`--extra-axes` の 12 軸でも 100.00）
-- `scripts/verify-harai-surface.cljs`: **15 assertions すべて held、exit 0**
-- `scripts/mutate-harai-surface.cljs`: **21 / 21 demonstrations**（control 1・floor 2・
+- `scripts/verify-harai-surface.cljk`: **15 assertions すべて held、exit 0**
+- `scripts/mutate-harai-surface.cljk`: **21 / 21 demonstrations**（control 1・floor 2・
   mutation 18）。各 mutation は exit 1 かつ**動いた id が期待と完全一致**することまで見る
 - `shadow-cljs release worker`: **55 files / 12 compiled / 0 warnings / 7.18s**、
   `dist/worker.js` 246,462 bytes
-- `scripts/smoke-worker.cljs`: ビルド済み bundle を import して **21 項目すべて PASS**
+- `scripts/smoke-worker.cljk`: ビルド済み bundle を import して **21 項目すべて PASS**
 
 ### 検査が落ちることを実際に見た（gate ごとに 1 回以上）
 
@@ -178,7 +178,7 @@ build し直した bundle の sha256 は変異前と**バイト一致**した
 - 決まっていないものは決まっていないまま: **どちらのメソッド語彙が本物か**
   （宣言 8 / 実装 11 / 重なり 3）と **actor の名前**（`harcom.etzhayyim.ai` は
   codemod artifact、evidenced intent は `harai.etzhayyim.com`）。どちらも
-  `scripts/verify-harai-surface.cljs` が現状を pin している。
+  `scripts/verify-harai-surface.cljk` が現状を pin している。
 
 ## やっていないこと
 

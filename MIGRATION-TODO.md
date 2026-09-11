@@ -23,7 +23,7 @@ referenced it, so it was not the migration's to touch.
 What is still *not* settled is **which method vocabulary is real** — the eight
 names the declarations agree on, or the eleven `kotoba/src` exports, which overlap
 in only three. See `docs/operator-quickstart.md` §8 and §11, and
-`scripts/verify-harai-surface.cljs`, which pins the current state so it cannot
+`scripts/verify-harai-surface.cljk`, which pins the current state so it cannot
 drift further unnoticed.
 
 **One codemod artifact is confirmed and unfixed**: every identity here points at

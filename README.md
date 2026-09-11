@@ -7,14 +7,14 @@
 `etzhayyim/root` の `60-apps/etzhayyim-project-harai` からの抽出物で、
 **2026-08-18 に appview を TypeScript/Svelte から ClojureScript へ移行した**
 （`docs/adr/0001`）。ここに書いた数字はすべて
-`scripts/verify-harai-surface.cljs` が tree から再計算して検査する。
+`scripts/verify-harai-surface.cljk` が tree から再計算して検査する。
 
 ## deploy されるものは、いま読んでいるソースである
 
 ```
-src/harai/route.cljc    判断（どの handler が答えるか）  ← 純 .cljc、テスト対象
-src/harai/view.cljc     ページ（jp-go-dds の hiccup）    ← 純 .cljc、テスト対象
-src/harai/worker.cljs   Request/Response に触る唯一の層
+src/harai/route.cljk    判断（どの handler が答えるか）  ← 純 .cljc、テスト対象
+src/harai/view.cljk     ページ（jp-go-dds の hiccup）    ← 純 .cljc、テスト対象
+src/harai/worker.cljk   Request/Response に触る唯一の層
         ↓ shadow-cljs :target :esm
 dist/worker.js          ← wrangler.jsonc の "main" が指すもの
 ```
@@ -95,7 +95,7 @@ dist/worker.js          ← wrangler.jsonc の "main" が指すもの
 | 面 | ファイル |
 |---|---|
 | 判断・描画・edge | `src/harai/{route.cljc, view.cljc, worker.cljs}` |
-| テスト | `test/harai/route_test.cljc`（6 tests / 28 assertions） |
+| テスト | `test/harai/route_test.cljk`（6 tests / 28 assertions） |
 | ビルド | `deps.edn` / `shadow-cljs.edn` / `.gitignore` |
 | Worker 設定 | `appview/harai-mcp-component/wrangler.jsonc` |
 | actor 記述子 | `appview/harai-mcp-component/kotodama.jsonld` |
@@ -178,14 +178,14 @@ deploy 先も中継先も、いま存在しない。`/xrpc/` は到達できな�
 2. **actor が何という名前か** —— `harai.etzhayyim.com` が evidenced intent だが、
    `HARAI_DID_PREFIX` はいまも `harcom.etzhayyim.ai` の下で rail DID を発行している。
 
-どちらも `scripts/verify-harai-surface.cljs` が現状を pin しており、直せば赤くなる。
+どちらも `scripts/verify-harai-surface.cljk` が現状を pin しており、直せば赤くなる。
 
 ## 検証
 
 ```bash
-nbb scripts/verify-harai-surface.cljs          # 15 assertions
-nbb scripts/mutate-harai-surface.cljs          # 21 demonstrations（検査器を落として確かめる）
-nbb scripts/smoke-worker.cljs dist/worker.js   # ビルド済み bundle を実際に叩く
+nbb scripts/verify-harai-surface.cljk          # 15 assertions
+nbb scripts/mutate-harai-surface.cljk          # 21 demonstrations（検査器を落として確かめる）
+nbb scripts/smoke-worker.cljk dist/worker.js   # ビルド済み bundle を実際に叩く
 ```
 
 exit 0 = 全一致 / 1 = 食い違い / **2 = 判定できなかった**（0 と区別する）。

@@ -20,8 +20,8 @@
 ;; are still pinned here, unchanged. **Fixing any of them turns this checker red —
 ;; that is the intent.** Update the assertion in the same commit and say what you chose.
 ;;
-;;   nbb scripts/verify-harai-surface.cljs            # from the repo root
-;;   nbb scripts/verify-harai-surface.cljs --no-net   # skip the DNS check
+;;   nbb scripts/verify-harai-surface.cljk            # from the repo root
+;;   nbb scripts/verify-harai-surface.cljk --no-net   # skip the DNS check
 ;;
 ;; Exit codes are three-valued on purpose (ADR-2608136000): a check that could not
 ;; run must not be indistinguishable from a check that ran and was happy.
@@ -52,9 +52,9 @@
    "kotoba/src/index.ts"
    "kotoba/src/types.ts"
    "kotoba/src/registry.ts"
-   "src/harai/route.cljc"
-   "src/harai/view.cljc"
-   "src/harai/worker.cljs"
+   "src/harai/route.cljk"
+   "src/harai/view.cljk"
+   "src/harai/worker.cljk"
    "shadow-cljs.edn"
    "deps.edn"])
 
@@ -151,8 +151,8 @@
         index    (slurp* "kotoba/src/index.ts")
         types    (slurp* "kotoba/src/types.ts")
         todo     (slurp* "MIGRATION-TODO.md")
-        viewsrc  (slurp* "src/harai/view.cljc")
-        workersrc (slurp* "src/harai/worker.cljs")
+        viewsrc  (slurp* "src/harai/view.cljk")
+        workersrc (slurp* "src/harai/worker.cljk")
         shadow   (edn/read-string (slurp* "shadow-cljs.edn"))
         wj       (js->clj (js/JSON.parse (strip-jsonc wrangler)) :keywordize-keys true)
         kj       (js->clj (js/JSON.parse kotodama) :keywordize-keys true)
