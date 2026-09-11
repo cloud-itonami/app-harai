@@ -32,7 +32,7 @@
 ```bash
 git clone git@github.com:cloud-itonami/app-harai.git
 cd app-harai
-npx --yes nbb scripts/verify-harai-surface.cljk
+npx --yes kbb --backend sci scripts/verify-harai-surface.cljk
 ```
 
 実際の出力（末尾）:
@@ -138,7 +138,7 @@ cat > /tmp/run.cljs <<'EOF'
 (require '[cljs.test :refer [run-tests]] 'harai.route-test)
 (run-tests 'harai.route-test)
 EOF
-npx --yes nbb --classpath "$CP" /tmp/run.cljs
+npx --yes kbb --backend sci --classpath "$CP" /tmp/run.cljs
 ```
 
 実際の出力:
@@ -162,7 +162,7 @@ Ran 6 tests containing 28 assertions.
 K=~/github/com-junkawasaki/orgs/kotoba-lang
 CP="src:$K/jp-go-digital-design-system/src:$K/html/src:$K/css/src"
 # view/render に css・route 表・env 相当を渡して 1 枚出す（下記は要点のみ）
-cd $K/design-quality && npx --yes nbb -m design-quality.cli score /tmp/page.html --min 95
+cd $K/design-quality && npx --yes kbb --backend sci -m design-quality.cli score /tmp/page.html --min 95
 ```
 
 実際の出力（末尾）:
@@ -190,7 +190,7 @@ resource governor）。直接叩かず、必ず guard 経由で:
 
 ```bash
 node ~/github/com-junkawasaki/scripts/resource-guard.mjs run build -- \
-  npx --yes shadow-cljs release worker
+  npx --yes amu compile --target wasm32-browser worker
 ```
 
 lock を他セッションが持っていると **exit 2 で拒否される。迂回しない** ——
@@ -204,7 +204,7 @@ lock を他セッションが持っていると **exit 2 で拒否される。�
 `dist/worker.js` は 246,462 バイト。次に、**その bundle を import して叩く**:
 
 ```bash
-npx --yes nbb scripts/smoke-worker.cljk dist/worker.js
+npx --yes kbb --backend sci scripts/smoke-worker.cljk dist/worker.js
 ```
 
 21 項目すべて PASS（末尾）:
@@ -264,7 +264,7 @@ Worker はそれを捕まえて 502 にしている（応答を見れば分か�
 ## 7. 検査器を落として確かめる ✅
 
 ```bash
-npx --yes nbb scripts/mutate-harai-surface.cljk
+npx --yes kbb --backend sci scripts/mutate-harai-surface.cljk
 ```
 
 ```

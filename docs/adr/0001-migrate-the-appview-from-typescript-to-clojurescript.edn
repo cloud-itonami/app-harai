@@ -127,7 +127,7 @@ env のキー、中継先の値、`APP_CAPABILITIES` から読んだメソッド
 - `scripts/verify-harai-surface.cljk`: **15 assertions すべて held、exit 0**
 - `scripts/mutate-harai-surface.cljk`: **21 / 21 demonstrations**（control 1・floor 2・
   mutation 18）。各 mutation は exit 1 かつ**動いた id が期待と完全一致**することまで見る
-- `shadow-cljs release worker`: **55 files / 12 compiled / 0 warnings / 7.18s**、
+- `amu compile --target wasm32-browser worker`: **55 files / 12 compiled / 0 warnings / 7.18s**、
   `dist/worker.js` 246,462 bytes
 - `scripts/smoke-worker.cljk`: ビルド済み bundle を import して **21 項目すべて PASS**
 

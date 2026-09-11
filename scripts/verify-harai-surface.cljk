@@ -1,4 +1,4 @@
-#!/usr/bin/env nbb
+#!/usr/bin/env kbb
 ;; verify-harai-surface — pin what this repository says about its own HTTP
 ;; surface, its own method vocabulary, and the migration that gave it one entry.
 ;;
@@ -20,8 +20,8 @@
 ;; are still pinned here, unchanged. **Fixing any of them turns this checker red —
 ;; that is the intent.** Update the assertion in the same commit and say what you chose.
 ;;
-;;   nbb scripts/verify-harai-surface.cljk            # from the repo root
-;;   nbb scripts/verify-harai-surface.cljk --no-net   # skip the DNS check
+;;   kbb --backend sci scripts/verify-harai-surface.cljk            # from the repo root
+;;   kbb --backend sci scripts/verify-harai-surface.cljk --no-net   # skip the DNS check
 ;;
 ;; Exit codes are three-valued on purpose (ADR-2608136000): a check that could not
 ;; run must not be indistinguishable from a check that ran and was happy.
