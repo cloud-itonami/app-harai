@@ -32,7 +32,7 @@
 ```bash
 git clone git@github.com:cloud-itonami/app-harai.git
 cd app-harai
-npx --yes nbb scripts/verify-harai-surface.cljs
+npx --yes nbb scripts/verify-harai-surface.cljk
 ```
 
 実際の出力（末尾）:
@@ -204,7 +204,7 @@ lock を他セッションが持っていると **exit 2 で拒否される。�
 `dist/worker.js` は 246,462 バイト。次に、**その bundle を import して叩く**:
 
 ```bash
-npx --yes nbb scripts/smoke-worker.cljs dist/worker.js
+npx --yes nbb scripts/smoke-worker.cljk dist/worker.js
 ```
 
 21 項目すべて PASS（末尾）:
@@ -264,7 +264,7 @@ Worker はそれを捕まえて 502 にしている（応答を見れば分か�
 ## 7. 検査器を落として確かめる ✅
 
 ```bash
-npx --yes nbb scripts/mutate-harai-surface.cljs
+npx --yes nbb scripts/mutate-harai-surface.cljk
 ```
 
 ```

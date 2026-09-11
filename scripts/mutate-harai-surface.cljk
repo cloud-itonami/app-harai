@@ -1,7 +1,7 @@
 #!/usr/bin/env nbb
 ;; mutate-harai-surface — check the checker.
 ;;
-;; scripts/verify-harai-surface.cljs is only worth having if it can tell the
+;; scripts/verify-harai-surface.cljk is only worth having if it can tell the
 ;; difference between the repository as it is and the repository changed. This
 ;; runs it against deliberately altered copies and requires, for each one:
 ;;
@@ -19,7 +19,7 @@
 ;; removed exits 2 — not 0 and not 1 — and --no-net reports the DNS check as
 ;; skipped rather than held.
 ;;
-;;   nbb scripts/mutate-harai-surface.cljs        # from the repo root
+;;   nbb scripts/mutate-harai-surface.cljk        # from the repo root
 
 (ns mutate-harai-surface
   (:require [kotoba.lang.text :as str]
@@ -33,7 +33,7 @@
 (def WRANGLER (str APPVIEW "/wrangler.jsonc"))
 (def SHADOW   "shadow-cljs.edn")
 (def INDEX    "kotoba/src/index.ts")
-(def WORKER   "src/harai/worker.cljs")
+(def WORKER   "src/harai/worker.cljk")
 
 (defn sub!
   "Replace `from` with `to` in file `f` under root `r`. Fails loudly if `from` is
@@ -153,7 +153,7 @@
     d))
 
 (defn run-verifier [dir & args]
-  (let [cmd (str "cd '" dir "' && git add -A 2>/dev/null; nbb scripts/verify-harai-surface.cljs "
+  (let [cmd (str "cd '" dir "' && git add -A 2>/dev/null; nbb scripts/verify-harai-surface.cljk "
                  (str/join " " args) " 2>&1")
         res (try {:out (str (cp/execSync cmd #js {:encoding "utf8"})) :code 0}
                  (catch :default e

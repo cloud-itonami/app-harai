@@ -1,6 +1,6 @@
 {
   "name": "kotodama-r3k9mwvx",
-  // Compiled from src/harai/worker.cljs by shadow-cljs (:target :esm).
+  // Compiled from src/harai/worker.cljk by shadow-cljs (:target :esm).
   // Before the cljs migration this pointed at a SvelteKit build output, and the
   // TypeScript a reader opened (src/app.ts) was in no bundle at all -- docs/adr/0001.
   "main": "../../dist/worker.js",
