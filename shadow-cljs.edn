@@ -7,7 +7,7 @@
 ;; （docs/adr/0001）。
 ;;
 ;; :warnings-as-errors は装飾ではない。shadow は未宣言・改名された var を
-;; WARNING として扱うので、`shadow-cljs release worker` は exit 0 のまま
+;; WARNING として扱うので、`amu compile --target wasm32-browser worker` は exit 0 のまま
 ;; 最初のリクエストで `Cannot read properties of undefined` を投げる bundle を
 ;; 書く。つまり「ビルドが通った」は検査ですらなかった —— **落ちようがなかった**。
 {:deps {:aliases [:cljs]}

@@ -183,9 +183,9 @@ deploy 先も中継先も、いま存在しない。`/xrpc/` は到達できな�
 ## 検証
 
 ```bash
-nbb scripts/verify-harai-surface.cljk          # 15 assertions
-nbb scripts/mutate-harai-surface.cljk          # 21 demonstrations（検査器を落として確かめる）
-nbb scripts/smoke-worker.cljk dist/worker.js   # ビルド済み bundle を実際に叩く
+kbb --backend sci scripts/verify-harai-surface.cljk          # 15 assertions
+kbb --backend sci scripts/mutate-harai-surface.cljk          # 21 demonstrations（検査器を落として確かめる）
+kbb --backend sci scripts/smoke-worker.cljk dist/worker.js   # ビルド済み bundle を実際に叩く
 ```
 
 exit 0 = 全一致 / 1 = 食い違い / **2 = 判定できなかった**（0 と区別する）。
