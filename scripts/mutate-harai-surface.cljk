@@ -11,7 +11,7 @@
 ;; The second requirement is the one that matters. Exit code alone would accept a
 ;; checker that goes red for the wrong reason — and a mutation that breaks a
 ;; different assertion than intended looks, from the exit code, like a successful
-;; demonstration (CLAUDE.md, ADR-2608136000). Several mutations here legitimately
+;; demonstration (AGENTS.md, ADR-2608136000). Several mutations here legitimately
 ;; move TWO ids (editing kotodama.jsonld moves both the fact it states and the
 ;; custody hash that pins the file); those are written down as two, not hidden.
 ;;
