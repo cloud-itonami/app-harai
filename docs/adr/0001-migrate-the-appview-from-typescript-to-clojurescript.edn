@@ -29,7 +29,7 @@
 literal で持っており、同じディレクトリの `wrangler.jsonc` が route 2 本・var 8 個を
 宣言していることに気づけなかった。
 
-**この workspace の正本言語は cljs と kotoba である。** superproject CLAUDE.md の
+**この workspace の正本言語は cljs と kotoba である。** superproject AGENTS.md の
 runtime 順序は kotoba wasm > clojurewasm > ClojureScript > nbb で、TypeScript は
 そこに無い。候補の 2 つはどちらも TypeScript なので、どちらを選んでも正本には
 着地しない。

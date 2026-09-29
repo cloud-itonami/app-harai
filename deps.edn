@@ -1,6 +1,6 @@
 ;; app-harai — 払い / 決済・清算の appview。
 ;;
-;; Worker は ClojureScript である（superproject CLAUDE.md の runtime 順序:
+;; Worker は ClojureScript である（superproject AGENTS.md の runtime 順序:
 ;; kotoba wasm > clojurewasm > ClojureScript > nbb）。入口を `.kotoba` ではなく
 ;; cljs に置くのは ADR-2606290000 の判断で、kotoba の ingress capability が
 ;; :native-aot / :wasm-aot とも pending だからである。判断を `.cljc` に切り出して
